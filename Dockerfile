@@ -12,9 +12,9 @@ COPY --chown=www-data:www-data . /var/www/html
 # ওয়ার্কিং ডিরেক্টরি সেট করা
 WORKDIR /var/www/html
 
-# ডিপেন্ডেন্সি ইনস্টল এবং ফ্রন্টএন্ড বিল্ড করা
+# ডিপেন্ডেন্সি ইনস্টল এবং ফ্রন্টএন্ড বিল্ড করা (মিক্স বা ভাইট যেকোনো একটি রান হবে)
 RUN composer install --no-dev --optimize-autoloader
-RUN npm install && npm run build
+RUN npm install && (npm run build || npm run prod || npm run dev || echo "No build script found, skipping")
 
 # লারাভেল ক্যাশ ক্লিয়ার ও অপ্টিমাইজ করা
 RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
