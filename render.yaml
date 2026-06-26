@@ -1,7 +1,7 @@
 services:
   - type: web
     name: billion-markets
-    env: php
+    runtime: php
     plan: free
     buildCommand: |
       composer install --no-dev --optimize-autoloader
@@ -9,6 +9,7 @@ services:
       php artisan config:cache
       php artisan route:cache
       php artisan view:cache
+      php artisan migrate --force
     startCommand: apache2-foreground
     envVars:
       - key: APP_ENV
