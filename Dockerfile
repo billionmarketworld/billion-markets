@@ -18,5 +18,5 @@ RUN composer install --no-dev --optimize-autoloader
 # লারাভেল ক্যাশ ক্লিয়ার ও অপ্টিমাইজ করা
 RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
 
-# কন্টেইনার চালুর পর মাইগ্রেশন রান এবং অ্যাপ চালু করা
-CMD php artisan migrate --force && php-fpm
+# কন্টেইনার চালুর পর মাইগ্রেশন রান এবং সচল রাখা
+CMD ["sh", "-c", "php artisan migrate --force && ssu-entrypoint-init"]
