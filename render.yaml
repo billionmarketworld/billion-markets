@@ -10,7 +10,6 @@ services:
       php artisan route:cache
       php artisan view:cache
     startCommand: apache2-foreground
-    staticPublishDirectory: public
     envVars:
       - key: APP_ENV
         value: production
