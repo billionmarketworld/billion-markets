@@ -1,0 +1,23 @@
+<?php
+
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::create('notices', function (Blueprint $table) {
+            $table->id();
+            $table->text('content')->nullable(); // নোটিশের টেক্সট
+            $table->boolean('is_active')->default(true); // নোটিশ অন/অফ করার জন্য
+            $table->timestamps();
+        });
+    }
+
+    public function down(): void
+    {
+        Schema::dropIfExists('notices');
+    }
+};
