@@ -26,4 +26,5 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-di
 RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
 
 # মাইগ্রেশন এবং সার্ভার স্টার্ট কমান্ড
-CMD ["sh", "-c", "php artisan migrate --force && docker-php-entrypoint php-fpm"]
+# কন্টেইনার চালুর মেইন কমান্ড
+CMD ["sh", "-c", "php artisan migrate --force && exec variables-loader-entrypoint"]
