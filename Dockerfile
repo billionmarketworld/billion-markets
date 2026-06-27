@@ -22,9 +22,6 @@ COPY --from=frontend-builder --chown=www-data:www-data /app/public /var/www/html
 ENV COMPOSER_MEMORY_LIMIT=-1
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
-# লারাভেল ক্যাশ অপ্টিমাইজ করা
-RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
-
 # মাইগ্রেশন এবং সার্ভার স্টার্ট কমান্ড
 # কন্টেইনার চালুর মেইন কমান্ড
 CMD ["sh", "-c", "php artisan migrate --force && exec variables-loader-entrypoint"]
