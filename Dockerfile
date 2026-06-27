@@ -1,25 +1,29 @@
-FROM serversideup/php:8.2-fpm-nginx
+# ১ নম্বর ধাপ: ফ্রন্টএন্ড বিল্ড করার জন্য একটি আলাদা অস্থায়ী কন্টেইনার
+FROM node:18-alpine AS frontend-builder
+WORKDIR /app
+COPY package*.json ./
+RUN npm install
+COPY . .
+# যদি মিক্স বা ভাইট স্ক্রিপ্ট থাকে তবে বিল্ড করবে, না থাকলে স্কিপ করবে
+RUN npm run build || npm run prod || npm run dev || echo "Skipping frontend build"
 
-# রুট ইউজার হিসেবে কাজ করা
+# ২ নম্বর ধাপ: মূল পিএইচপি সার্ভার (যা লাইভ থাকবে)
+FROM serversideup/php:8.2-fpm-nginx
 USER root
 
-# মেমোরি লিমিট বাড়ানোর জন্য এনভায়রনমেন্ট সেট করা
-ENV COMPOSER_MEMORY_LIMIT=-1
-
-# প্রয়োজনীয় টুলস ইনস্টল করা (শুধু যা না হলেই নয়)
-RUN apt-get update && apt-get install -y nodejs npm --no-install-recommends && rm -rf /var/list/apt/lists/*
-
-# প্রজেক্টের সব ফাইল কントেনারে কপি করা
+# প্রজেক্টের ফাইল কপি করা
 COPY --chown=www-data:www-data . /var/www/html
-
-# ওয়ার্কিং ডিরেক্টরি সেট করা
 WORKDIR /var/www/html
 
-# কম মেমোরি খরচ করে ডিপেন্ডেন্সি ইনস্টল করা
+# ১ নম্বর ধাপের তৈরি হওয়া ফ্রন্টএন্ড ফাইলগুলো শুধু এখানে এনে বসানো (কোনো নোড ইনস্টল হবে না)
+COPY --from=frontend-builder --chown=www-data:www-data /app/public /var/www/html/public
+
+# কম মেমোরি ব্যবহার করে কম্পোজার ইনস্টল
+ENV COMPOSER_MEMORY_LIMIT=-1
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
 # লারাভেল ক্যাশ অপ্টিমাইজ করা
 RUN php artisan config:cache && php artisan route:cache && php artisan view:cache
 
-# কন্টেইনার চালুর মেইন কমান্ড
+# মাইগ্রেশন এবং সার্ভার স্টার্ট কমান্ড
 CMD ["sh", "-c", "php artisan migrate --force && docker-php-entrypoint php-fpm"]
