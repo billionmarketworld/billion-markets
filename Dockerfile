@@ -22,6 +22,4 @@ COPY --from=frontend-builder --chown=www-data:www-data /app/public /var/www/html
 ENV COMPOSER_MEMORY_LIMIT=-1
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
-# মাইগ্রেশন এবং সার্ভার স্টার্ট কমান্ড
-# কন্টেইনার চালুর মেইন কমান্ড
-CMD ["sh", "-c", "php artisan migrate --force && exec variables-loader-entrypoint"]
+CMD ["sh", "-c", "php artisan migrate --force && php-fpm"]
