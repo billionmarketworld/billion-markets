@@ -1,4 +1,9 @@
 <?php
+// Vercel serverless writable folder configuration
+$_ENV['BOOTSTRAP_CACHE_PATH'] = '/tmp';
+if (!file_exists('/tmp/cache')) {
+    @mkdir('/tmp/cache', 0775, true);
+}
 
 use Illuminate\Contracts\Http\Kernel;
 use Illuminate\Http\Request;
