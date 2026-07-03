@@ -26,9 +26,12 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        // Vercel বা লাইভ সার্ভারে থাকলে জোর করে HTTPS অ্যাসেট লিংক তৈরি করা
+        // Vercel বা লাইভ সার্ভারে থাকলে জোর করে HTTPS এবং /public পাথ সেট করা
         if (config('app.env') === 'production' || isset($_SERVER['HTTPS'])) {
-            URL::forceScheme('https');
+            \URL::forceScheme('https');
+            
+            // Vercel-এর ভাঙা CSS/JS পাথ জোড়া দেওয়ার মেইন ট্রিক
+            config(['app.asset_url' => 'https://billion-markets-live.vercel.app/public']);
         }
     }
 }
