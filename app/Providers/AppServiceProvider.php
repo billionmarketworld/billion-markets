@@ -3,6 +3,7 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Illuminate\Support\Facades\URL;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -23,8 +24,11 @@ class AppServiceProvider extends ServiceProvider
      *
      * @return void
      */
-    public function boot()
+    public function boot(): void
     {
-        //
+        // Vercel বা লাইভ সার্ভারে থাকলে জোর করে HTTPS অ্যাসেট লিংক তৈরি করা
+        if (config('app.env') === 'production' || isset($_SERVER['HTTPS'])) {
+            URL::forceScheme('https');
+        }
     }
 }
