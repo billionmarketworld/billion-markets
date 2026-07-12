@@ -22,4 +22,4 @@ COPY --from=frontend-builder --chown=www-data:www-data /app/public /var/www/html
 ENV COMPOSER_MEMORY_LIMIT=-1
 RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist
 
-CMD ["sh", "-c", "php artisan migrate --force && php-fpm"]
+CMD ["/init"]
