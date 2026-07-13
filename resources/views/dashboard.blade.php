@@ -7,14 +7,16 @@
     <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800&display=swap">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 </head>
 <body class="font-sans antialiased m-0 p-0 text-white select-none" style="background-color: #0b0204;">
 
-    <div class="flex min-h-screen">
-        <aside class="w-64 border-r border-gray-900/40 flex flex-col justify-between p-6 shrink-0" style="background-color: #0d0305;">
+    <!-- ⚡ ফিক্সড: মোবাইলে flex-col (নিচে নিচে) এবং বড় স্ক্রিনে md:flex-row (পাশাপাশি) হবে -->
+    <div class="flex flex-col md:flex-row min-h-screen">
+        
+        <!-- ⚡ ফিক্সড: মোবাইলে ফুল উইডথ (w-full) এবং কম্পিউটারে নির্দিষ্ট উইডথ (md:w-64) হবে -->
+        <aside class="w-full md:w-64 border-b md:border-b-0 md:border-r border-gray-900/40 flex flex-col justify-between p-6 shrink-0" style="background-color: #0d0305;">
             <div>
-                <div class="text-xl font-extrabold tracking-wide mb-10" style="color: #ff1e27;">
+                <div class="text-xl font-extrabold tracking-wide mb-6 md:mb-10" style="color: #ff1e27;">
                     ↑ Billion <span class="text-white text-base font-bold">Markets</span>
                 </div>
                 
@@ -40,8 +42,8 @@
                 </nav>
             </div>
             
-            <div class="space-y-4">
-                <!-- 🎯 ইউজারের নামের উপর ক্লিক করলে প্রোফাইল এডিট পেজে নিয়ে যাবে -->
+            <!-- ⚡ ফিক্সড: মোবাইলে নিচের অংশটুকু একটু গ্যাপ (mt-6) তৈরি করবে যেন মিশে না যায় -->
+            <div class="space-y-4 mt-6 md:mt-0">
                 <div class="text-xs text-gray-500 font-medium px-4">
                     Logged in as: 
                     <a href="{{ route('user.profile') }}" class="text-gray-300 font-bold block mt-0.5 hover:text-[#ff1e27] transition duration-200 group flex items-center space-x-1">
@@ -58,7 +60,8 @@
             </div>
         </aside>
 
-        <main class="flex-grow p-8 flex flex-col space-y-6 overflow-y-auto">
+        <!-- ⚡ ফিক্সড: মেইন কনটেন্টের প্যাডিং মোবাইলের জন্য p-4 এবং কম্পিউটারের জন্য md:p-8 করা হয়েছে -->
+        <main class="flex-grow p-4 md:p-8 flex flex-col space-y-6 overflow-y-auto">
             <div class="w-full rounded-lg p-5" style="background-color: #120508; border-left: 4px solid #ff1e27;">
                 <h2 class="text-lg font-bold text-white tracking-wide">Welcome Back, {{ Auth::user()->name }}!</h2>
                 <p class="text-xs text-gray-500 mt-0.5">Here is your investment and transaction overview for today.</p>
@@ -74,7 +77,8 @@
             </div>
             @endif
 
-            <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
+            <!-- ⚡ ফিক্সড: মোবাইলে ১টি কলাম (grid-cols-1) এবং কম্পিউটারে ৪টি কলাম (md:grid-cols-4) হবে -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
                 <div class="rounded-lg p-5 border border-gray-900/30 flex flex-col space-y-2" style="background-color: #120508;">
                     <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Total Investment</span>
                     <span class="text-2xl font-black text-white">${{ number_format($totalInvestment ?? 0, 2) }}</span>
