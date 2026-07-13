@@ -10,14 +10,26 @@
 </head>
 <body class="font-sans antialiased m-0 p-0 text-white select-none" style="background-color: #0b0204;">
 
-    <!-- ⚡ ফিক্সড: মোবাইলে flex-col (নিচে নিচে) এবং বড় স্ক্রিনে md:flex-row (পাশাপাশি) হবে -->
-    <div class="flex flex-col md:flex-row min-h-screen">
+    <div class="min-h-screen flex flex-col md:flex-row relative overflow-x-hidden">
         
-        <!-- ⚡ ফিক্সড: মোবাইলে ফুল উইডথ (w-full) এবং কম্পিউটারে নির্দিষ্ট উইডথ (md:w-64) হবে -->
-        <aside class="w-full md:w-64 border-b md:border-b-0 md:border-r border-gray-900/40 flex flex-col justify-between p-6 shrink-0" style="background-color: #0d0305;">
+        <div class="flex md:hidden items-center justify-between p-4 border-b border-gray-900/40 sticky top-0 z-50" style="background-color: #0d0305;">
+            <div class="text-lg font-extrabold tracking-wide" style="color: #ff1e27;">
+                ↑ Billion <span class="text-white text-sm font-bold">Markets</span>
+            </div>
+            <button id="menu-toggle" class="text-white text-xl p-2 focus:outline-none hover:text-[#ff1e27] transition">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+        </div>
+
+        <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-64 border-r border-gray-900/40 flex flex-col justify-between p-6 shrink-0 transform -translate-x-full md:translate-x-0 md:static md:h-screen transition-transform duration-300 ease-in-out" style="background-color: #0d0305;">
             <div>
-                <div class="text-xl font-extrabold tracking-wide mb-6 md:mb-10" style="color: #ff1e27;">
-                    ↑ Billion <span class="text-white text-base font-bold">Markets</span>
+                <div class="flex items-center justify-between mb-8 md:mb-10">
+                    <div class="text-xl font-extrabold tracking-wide" style="color: #ff1e27;">
+                        ↑ Billion <span class="text-white text-base font-bold">Markets</span>
+                    </div>
+                    <button id="menu-close" class="md:hidden text-gray-400 hover:text-white text-lg p-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </div>
                 
                 <nav class="space-y-3">
@@ -42,7 +54,6 @@
                 </nav>
             </div>
             
-            <!-- ⚡ ফিক্সড: মোবাইলে নিচের অংশটুকু একটু গ্যাপ (mt-6) তৈরি করবে যেন মিশে না যায় -->
             <div class="space-y-4 mt-6 md:mt-0">
                 <div class="text-xs text-gray-500 font-medium px-4">
                     Logged in as: 
@@ -60,12 +71,14 @@
             </div>
         </aside>
 
-        <!-- ⚡ ফিক্সড: মেইন কনটেন্টের প্যাডিং মোবাইলের জন্য p-4 এবং কম্পিউটারের জন্য md:p-8 করা হয়েছে -->
-        <main class="flex-grow p-4 md:p-8 flex flex-col space-y-6 overflow-y-auto">
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-40 hidden md:hidden"></div>
+
+        <main class="flex-grow p-4 md:p-8 flex flex-col space-y-6 overflow-y-auto md:h-screen">
             <div class="w-full rounded-lg p-5" style="background-color: #120508; border-left: 4px solid #ff1e27;">
                 <h2 class="text-lg font-bold text-white tracking-wide">Welcome Back, {{ Auth::user()->name }}!</h2>
                 <p class="text-xs text-gray-500 mt-0.5">Here is your investment and transaction overview for today.</p>
             </div>
+            
             @if(isset($notice) && $notice->content)
             <div class="w-full bg-[#120508] border border-red-900/30 rounded-lg p-3 flex items-center space-x-3 overflow-hidden my-3">
                 <span class="bg-[#b80c14] text-white text-xs font-bold uppercase px-3 py-1 rounded shrink-0 animate-pulse">
@@ -77,7 +90,6 @@
             </div>
             @endif
 
-            <!-- ⚡ ফিক্সড: মোবাইলে ১টি কলাম (grid-cols-1) এবং কম্পিউটারে ৪টি কলাম (md:grid-cols-4) হবে -->
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-6">
                 <div class="rounded-lg p-5 border border-gray-900/30 flex flex-col space-y-2" style="background-color: #120508;">
                     <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Total Investment</span>
@@ -103,5 +115,21 @@
             </div>
         </main>
     </div>
+
+    <script>
+        const menuToggle = document.getElementById('menu-toggle');
+        const menuClose = document.getElementById('menu-close');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        menuToggle.addEventListener('click', toggleSidebar);
+        menuClose.addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+    </script>
 </body>
 </html>
