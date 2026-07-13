@@ -7,13 +7,31 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
-<body class="bg-[#0b0204] text-white font-sans antialiased selection:bg-[#b80c14]">
-    <div class="flex min-h-screen">
+<body class="bg-[#0b0204] text-white font-sans antialiased selection:bg-[#b80c14] m-0 p-0 select-none">
+    
+    <div class="min-h-screen flex flex-col md:flex-row relative overflow-x-hidden">
         
-        <aside class="w-64 border-r border-gray-900/40 p-6 bg-[#0d0305] flex flex-col justify-between shrink-0">
+        <!-- 📱 মোবাইল টপ বার (হ্যামবার্গার মেনু বাটনসহ) -->
+        <div class="flex md:hidden items-center justify-between p-4 border-b border-gray-900/40 sticky top-0 z-50" style="background-color: #0d0305;">
+            <div class="text-lg font-extrabold tracking-wide" style="color: #ff1e27;">
+                ↑ Billion <span class="text-white text-sm font-bold">Markets</span>
+            </div>
+            <button id="menu-toggle" class="text-white text-xl p-2 focus:outline-none hover:text-[#ff1e27] transition">
+                <i class="fa-solid fa-bars"></i>
+            </button>
+        </div>
+
+        <!-- 🧭 স্লাইডিং সাইডবার -->
+        <aside id="sidebar" class="fixed inset-y-0 left-0 z-50 w-64 border-r border-gray-900/40 p-6 bg-[#0d0305] flex flex-col justify-between shrink-0 transform -translate-x-full md:translate-x-0 md:static md:h-screen transition-transform duration-300 ease-in-out">
             <div>
-                <div class="text-xl font-extrabold tracking-wide mb-10 flex items-center space-x-2 text-[#ff1e27]">
-                    <span>↑ Billion <span class="text-white text-base font-bold">Markets</span></span>
+                <div class="flex items-center justify-between mb-8 md:mb-10">
+                    <div class="text-xl font-extrabold tracking-wide flex items-center space-x-2 text-[#ff1e27]">
+                        <span>↑ Billion <span class="text-white text-base font-bold">Markets</span></span>
+                    </div>
+                    <!-- ✕ ক্লোজ বাটন -->
+                    <button id="menu-close" class="md:hidden text-gray-400 hover:text-white text-lg p-1">
+                        <i class="fa-solid fa-xmark"></i>
+                    </button>
                 </div>
                 
                 <nav class="space-y-3">
@@ -25,6 +43,7 @@
                         <i class="fa-solid fa-gauge"></i> <span>Dashboard</span>
                     </a>
                     
+                    <!-- একটিভ পেজ: Investment -->
                     <a href="{{ route('dashboard') }}?page=investment" class="flex items-center space-x-3 p-3 bg-[#b80c14] text-white font-bold rounded shadow-lg shadow-red-900/20">
                         <i class="fa-solid fa-chart-line"></i> <span>Investment</span>
                     </a>
@@ -39,7 +58,7 @@
                 </nav>
             </div>
 
-            <div class="space-y-4 mt-auto">
+            <div class="space-y-4 mt-6 md:mt-auto">
                 <div class="text-xs text-gray-500 font-medium px-4">
                     Logged in as: 
                     <a href="{{ route('user.profile') }}" class="text-gray-300 font-bold block mt-0.5 hover:text-[#ff1e27] transition duration-200 group flex items-center space-x-1">
@@ -57,7 +76,11 @@
             </div>
         </aside>
 
-        <main class="flex-grow p-8 flex flex-col space-y-6 overflow-y-auto">
+        <!-- 🖤 মোবাইল ওভারলে ব্যাকড্রপ -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-40 hidden md:hidden"></div>
+
+        <!-- 💻 মূল কনটেন্ট এরিয়া -->
+        <main class="flex-grow p-4 md:p-8 flex flex-col space-y-6 overflow-y-auto md:h-screen">
             
             <div class="w-full rounded-lg p-5 bg-[#120508]" style="border-left: 4px solid #ff1e27;">
                 <h2 class="text-xl font-bold text-white tracking-wide">Welcome Back, {{ Auth::user()->name }}!</h2>
@@ -79,8 +102,9 @@
                 <h3 class="text-lg font-bold text-gray-400 uppercase tracking-wider text-xs">My Investment Overview</h3>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 w-full">
-                <div class="rounded-lg p-6 border border-gray-900/30 flex flex-col space-y-1 bg-[#120508] max-w-sm relative overflow-hidden transition hover:border-red-500/20">
+            <!-- 📊 রেসপনসিভ গ্রিড: মোবাইলে ১ কলাম, ডেক্সটপে ৩ কলাম -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-6 w-full">
+                <div class="rounded-lg p-6 border border-gray-900/30 flex flex-col space-y-1 bg-[#120508] w-full relative overflow-hidden transition hover:border-red-500/20">
                     <span class="text-xs text-gray-500 font-bold uppercase tracking-wider">Total Deposit</span>
                     
                     <span class="text-2xl font-extrabold text-white tracking-tight whitespace-nowrap">
@@ -93,5 +117,22 @@
 
         </main>
     </div>
+
+    <!-- ⚡ জাভাস্ক্রিপ্ট: মেনু স্লাইডিং টগল স্ক্রিপ্ট -->
+    <script>
+        const menuToggle = document.getElementById('menu-toggle');
+        const menuClose = document.getElementById('menu-close');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+
+        function toggleSidebar() {
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+
+        menuToggle.addEventListener('click', toggleSidebar);
+        menuClose.addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+    </script>
 </body>
 </html>
