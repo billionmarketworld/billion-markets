@@ -1,117 +1,172 @@
 <?php
 
-namespace Illuminate\Contracts\Pagination;
+namespace Illuminate\Pagination;
 
-interface CursorPaginator
+use ArrayAccess;
+use Countable;
+use Illuminate\Contracts\Pagination\CursorPaginator as PaginatorContract;
+use Illuminate\Contracts\Support\Arrayable;
+use Illuminate\Contracts\Support\Jsonable;
+use Illuminate\Support\Collection;
+use IteratorAggregate;
+use JsonSerializable;
+
+class CursorPaginator extends AbstractCursorPaginator implements Arrayable, ArrayAccess, Countable, IteratorAggregate, Jsonable, JsonSerializable, PaginatorContract
 {
     /**
-     * Get the URL for a given cursor.
+     * Indicates whether there are more items in the data source.
      *
+     * @return bool
+     */
+    protected $hasMore;
+
+    /**
+     * Create a new paginator instance.
+     *
+     * @param  mixed  $items
+     * @param  int  $perPage
      * @param  \Illuminate\Pagination\Cursor|null  $cursor
-     * @return string
+     * @param  array  $options  (path, query, fragment, pageName)
+     * @return void
      */
-    public function url($cursor);
+    public function __construct($items, $perPage, $cursor = null, array $options = [])
+    {
+        $this->options = $options;
+
+        foreach ($options as $key => $value) {
+            $this->{$key} = $value;
+        }
+
+        $this->perPage = (int) $perPage;
+        $this->cursor = $cursor;
+        $this->path = $this->path !== '/' ? rtrim($this->path, '/') : $this->path;
+
+        $this->setItems($items);
+    }
 
     /**
-     * Add a set of query string values to the paginator.
+     * Set the items for the paginator.
      *
-     * @param  array|string|null  $key
-     * @param  string|null  $value
-     * @return $this
+     * @param  mixed  $items
+     * @return void
      */
-    public function appends($key, $value = null);
+    protected function setItems($items)
+    {
+        $this->items = $items instanceof Collection ? $items : Collection::make($items);
+
+        $this->hasMore = $this->items->count() > $this->perPage;
+
+        $this->items = $this->items->slice(0, $this->perPage);
+
+        if (! is_null($this->cursor) && $this->cursor->pointsToPreviousItems()) {
+            $this->items = $this->items->reverse()->values();
+        }
+    }
 
     /**
-     * Get / set the URL fragment to be appended to URLs.
+     * Render the paginator using the given view.
      *
-     * @param  string|null  $fragment
-     * @return $this|string|null
+     * @param  string|null  $view
+     * @param  array  $data
+     * @return \Illuminate\Contracts\Support\Htmlable
      */
-    public function fragment($fragment = null);
+    public function links($view = null, $data = [])
+    {
+        return $this->render($view, $data);
+    }
 
     /**
-     * Get the URL for the previous page, or null.
+     * Render the paginator using the given view.
      *
-     * @return string|null
+     * @param  string|null  $view
+     * @param  array  $data
+     * @return \Illuminate\Contracts\Support\Htmlable
      */
-    public function previousPageUrl();
+    public function render($view = null, $data = [])
+    {
+        return static::viewFactory()->make($view ?: Paginator::$defaultSimpleView, array_merge($data, [
+            'paginator' => $this,
+        ]));
+    }
 
     /**
-     * The URL for the next page, or null.
+     * Determine if there are more items in the data source.
      *
-     * @return string|null
+     * @return bool
      */
-    public function nextPageUrl();
-
-    /**
-     * Get all of the items being paginated.
-     *
-     * @return array
-     */
-    public function items();
-
-    /**
-     * Get the "cursor" of the previous set of items.
-     *
-     * @return \Illuminate\Pagination\Cursor|null
-     */
-    public function previousCursor();
-
-    /**
-     * Get the "cursor" of the next set of items.
-     *
-     * @return \Illuminate\Pagination\Cursor|null
-     */
-    public function nextCursor();
-
-    /**
-     * Determine how many items are being shown per page.
-     *
-     * @return int
-     */
-    public function perPage();
-
-    /**
-     * Get the current cursor being paginated.
-     *
-     * @return \Illuminate\Pagination\Cursor|null
-     */
-    public function cursor();
+    public function hasMorePages()
+    {
+        return (is_null($this->cursor) && $this->hasMore) ||
+            (! is_null($this->cursor) && $this->cursor->pointsToNextItems() && $this->hasMore) ||
+            (! is_null($this->cursor) && $this->cursor->pointsToPreviousItems());
+    }
 
     /**
      * Determine if there are enough items to split into multiple pages.
      *
      * @return bool
      */
-    public function hasPages();
+    public function hasPages()
+    {
+        return ! $this->onFirstPage() || $this->hasMorePages();
+    }
 
     /**
-     * Get the base path for paginator generated URLs.
-     *
-     * @return string|null
-     */
-    public function path();
-
-    /**
-     * Determine if the list of items is empty or not.
+     * Determine if the paginator is on the first page.
      *
      * @return bool
      */
-    public function isEmpty();
+    public function onFirstPage()
+    {
+        return is_null($this->cursor) || ($this->cursor->pointsToPreviousItems() && ! $this->hasMore);
+    }
 
     /**
-     * Determine if the list of items is not empty.
+     * Determine if the paginator is on the last page.
      *
      * @return bool
      */
-    public function isNotEmpty();
+    public function onLastPage()
+    {
+        return ! $this->hasMorePages();
+    }
 
     /**
-     * Render the paginator using a given view.
+     * Get the instance as an array.
      *
-     * @param  string|null  $view
-     * @param  array  $data
+     * @return array
+     */
+    public function toArray()
+    {
+        return [
+            'data' => $this->items->toArray(),
+            'path' => $this->path(),
+            'per_page' => $this->perPage(),
+            'next_cursor' => $this->nextCursor()?->encode(),
+            'next_page_url' => $this->nextPageUrl(),
+            'prev_cursor' => $this->previousCursor()?->encode(),
+            'prev_page_url' => $this->previousPageUrl(),
+        ];
+    }
+
+    /**
+     * Convert the object into something JSON serializable.
+     *
+     * @return array
+     */
+    public function jsonSerialize(): array
+    {
+        return $this->toArray();
+    }
+
+    /**
+     * Convert the object to its JSON representation.
+     *
+     * @param  int  $options
      * @return string
      */
-    public function render($view = null, $data = []);
+    public function toJson($options = 0)
+    {
+        return json_encode($this->jsonSerialize(), $options);
+    }
 }
