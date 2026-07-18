@@ -1,112 +1,233 @@
-# Monolog - Logging for PHP [![Continuous Integration](https://github.com/Seldaek/monolog/workflows/Continuous%20Integration/badge.svg?branch=main)](https://github.com/Seldaek/monolog/actions)
+PHP Parser
+==========
 
-[![Total Downloads](https://img.shields.io/packagist/dt/monolog/monolog.svg)](https://packagist.org/packages/monolog/monolog)
-[![Latest Stable Version](https://img.shields.io/packagist/v/monolog/monolog.svg)](https://packagist.org/packages/monolog/monolog)
+[![Coverage Status](https://coveralls.io/repos/github/nikic/PHP-Parser/badge.svg?branch=master)](https://coveralls.io/github/nikic/PHP-Parser?branch=master)
 
+This is a PHP parser written in PHP. Its purpose is to simplify static code analysis and
+manipulation.
 
-Monolog sends your logs to files, sockets, inboxes, databases and various
-web services. See the complete list of handlers below. Special handlers
-allow you to build advanced logging strategies.
+[**Documentation for version 5.x**][doc_master] (current; for running on PHP >= 7.4; for parsing PHP 7.0 to PHP 8.4, with limited support for parsing PHP 5.x).
 
-This library implements the [PSR-3](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-3-logger-interface.md)
-interface that you can type-hint against in your own libraries to keep
-a maximum of interoperability. You can also use it in your applications to
-make sure you can always use another compatible logger at a later time.
-As of 1.11.0 Monolog public APIs will also accept PSR-3 log levels.
-Internally Monolog still uses its own level scheme since it predates PSR-3.
+[Documentation for version 4.x][doc_4_x] (supported; for running on PHP >= 7.0; for parsing PHP 5.2 to PHP 8.3).
 
-## Installation
+Features
+--------
 
-Install the latest version with
+The main features provided by this library are:
 
-```bash
-$ composer require monolog/monolog
+ * Parsing PHP 7, and PHP 8 code into an abstract syntax tree (AST).
+   * Invalid code can be parsed into a partial AST.
+   * The AST contains accurate location information.
+ * Dumping the AST in human-readable form.
+ * Converting an AST back to PHP code.
+   * Formatting can be preserved for partially changed ASTs.
+ * Infrastructure to traverse and modify ASTs.
+ * Resolution of namespaced names.
+ * Evaluation of constant expressions.
+ * Builders to simplify AST construction for code generation.
+ * Converting an AST into JSON and back.
+
+Quick Start
+-----------
+
+Install the library using [composer](https://getcomposer.org):
+
+    php composer.phar require nikic/php-parser
+
+Parse some PHP code into an AST and dump the result in human-readable form:
+
+```php
+<?php
+use PhpParser\Error;
+use PhpParser\NodeDumper;
+use PhpParser\ParserFactory;
+
+$code = <<<'CODE'
+<?php
+
+function test($foo)
+{
+    var_dump($foo);
+}
+CODE;
+
+$parser = (new ParserFactory())->createForNewestSupportedVersion();
+try {
+    $ast = $parser->parse($code);
+} catch (Error $error) {
+    echo "Parse error: {$error->getMessage()}\n";
+    return;
+}
+
+$dumper = new NodeDumper;
+echo $dumper->dump($ast) . "\n";
 ```
 
-## Basic Usage
+This dumps an AST looking something like this:
+
+```
+array(
+    0: Stmt_Function(
+        attrGroups: array(
+        )
+        byRef: false
+        name: Identifier(
+            name: test
+        )
+        params: array(
+            0: Param(
+                attrGroups: array(
+                )
+                flags: 0
+                type: null
+                byRef: false
+                variadic: false
+                var: Expr_Variable(
+                    name: foo
+                )
+                default: null
+            )
+        )
+        returnType: null
+        stmts: array(
+            0: Stmt_Expression(
+                expr: Expr_FuncCall(
+                    name: Name(
+                        name: var_dump
+                    )
+                    args: array(
+                        0: Arg(
+                            name: null
+                            value: Expr_Variable(
+                                name: foo
+                            )
+                            byRef: false
+                            unpack: false
+                        )
+                    )
+                )
+            )
+        )
+    )
+)
+```
+
+Let's traverse the AST and perform some kind of modification. For example, drop all function bodies:
+
+```php
+use PhpParser\Node;
+use PhpParser\Node\Stmt\Function_;
+use PhpParser\NodeTraverser;
+use PhpParser\NodeVisitorAbstract;
+
+$traverser = new NodeTraverser();
+$traverser->addVisitor(new class extends NodeVisitorAbstract {
+    public function enterNode(Node $node) {
+        if ($node instanceof Function_) {
+            // Clean out the function body
+            $node->stmts = [];
+        }
+    }
+});
+
+$ast = $traverser->traverse($ast);
+echo $dumper->dump($ast) . "\n";
+```
+
+This gives us an AST where the `Function_::$stmts` are empty:
+
+```
+array(
+    0: Stmt_Function(
+        attrGroups: array(
+        )
+        byRef: false
+        name: Identifier(
+            name: test
+        )
+        params: array(
+            0: Param(
+                attrGroups: array(
+                )
+                type: null
+                byRef: false
+                variadic: false
+                var: Expr_Variable(
+                    name: foo
+                )
+                default: null
+            )
+        )
+        returnType: null
+        stmts: array(
+        )
+    )
+)
+```
+
+Finally, we can convert the new AST back to PHP code:
+
+```php
+use PhpParser\PrettyPrinter;
+
+$prettyPrinter = new PrettyPrinter\Standard;
+echo $prettyPrinter->prettyPrintFile($ast);
+```
+
+This gives us our original code, minus the `var_dump()` call inside the function:
 
 ```php
 <?php
 
-use Monolog\Logger;
-use Monolog\Handler\StreamHandler;
-
-// create a log channel
-$log = new Logger('name');
-$log->pushHandler(new StreamHandler('path/to/your.log', Logger::WARNING));
-
-// add records to the log
-$log->warning('Foo');
-$log->error('Bar');
+function test($foo)
+{
+}
 ```
 
-## Documentation
+For a more comprehensive introduction, see the documentation.
 
-- [Usage Instructions](doc/01-usage.md)
-- [Handlers, Formatters and Processors](doc/02-handlers-formatters-processors.md)
-- [Utility Classes](doc/03-utilities.md)
-- [Extending Monolog](doc/04-extending.md)
-- [Log Record Structure](doc/message-structure.md)
+Documentation
+-------------
 
-## Support Monolog Financially
+ 1. [Introduction](doc/0_Introduction.markdown)
+ 2. [Usage of basic components](doc/2_Usage_of_basic_components.markdown)
 
-Get supported Monolog and help fund the project with the [Tidelift Subscription](https://tidelift.com/subscription/pkg/packagist-monolog-monolog?utm_source=packagist-monolog-monolog&utm_medium=referral&utm_campaign=enterprise) or via [GitHub sponsorship](https://github.com/sponsors/Seldaek). 
+Component documentation:
 
-Tidelift delivers commercial support and maintenance for the open source dependencies you use to build your applications. Save time, reduce risk, and improve code health, while paying the maintainers of the exact dependencies you use.
+ * [Walking the AST](doc/component/Walking_the_AST.markdown)
+   * Node visitors
+   * Modifying the AST from a visitor
+   * Short-circuiting traversals
+   * Interleaved visitors
+   * Simple node finding API
+   * Parent and sibling references
+ * [Name resolution](doc/component/Name_resolution.markdown)
+   * Name resolver options
+   * Name resolution context
+ * [Pretty printing](doc/component/Pretty_printing.markdown)
+   * Converting AST back to PHP code
+   * Customizing formatting
+   * Formatting-preserving code transformations
+ * [AST builders](doc/component/AST_builders.markdown)
+   * Fluent builders for AST nodes
+ * [Lexer](doc/component/Lexer.markdown)
+   * Emulation
+   * Tokens, positions and attributes
+ * [Error handling](doc/component/Error_handling.markdown)
+   * Column information for errors
+   * Error recovery (parsing of syntactically incorrect code)
+ * [Constant expression evaluation](doc/component/Constant_expression_evaluation.markdown)
+   * Evaluating constant/property/etc initializers
+   * Handling errors and unsupported expressions
+ * [JSON representation](doc/component/JSON_representation.markdown)
+   * JSON encoding and decoding of ASTs
+ * [Performance](doc/component/Performance.markdown)
+   * Disabling Xdebug
+   * Reusing objects
+   * Garbage collection impact
+ * [Frequently asked questions](doc/component/FAQ.markdown)
+   * Parent and sibling references
 
-## Third Party Packages
-
-Third party handlers, formatters and processors are
-[listed in the wiki](https://github.com/Seldaek/monolog/wiki/Third-Party-Packages). You
-can also add your own there if you publish one.
-
-## About
-
-### Requirements
-
-- Monolog `^2.0` works with PHP 7.2 or above, use Monolog `^1.25` for PHP 5.3+ support.
-
-### Support
-
-Monolog 1.x support is somewhat limited at this point and only important fixes will be done. You should migrate to Monolog 2 where possible to benefit from all the latest features and fixes.
-
-### Submitting bugs and feature requests
-
-Bugs and feature request are tracked on [GitHub](https://github.com/Seldaek/monolog/issues)
-
-### Framework Integrations
-
-- Frameworks and libraries using [PSR-3](https://github.com/php-fig/fig-standards/blob/master/accepted/PSR-3-logger-interface.md)
-  can be used very easily with Monolog since it implements the interface.
-- [Symfony](http://symfony.com) comes out of the box with Monolog.
-- [Laravel](http://laravel.com/) comes out of the box with Monolog.
-- [Lumen](http://lumen.laravel.com/) comes out of the box with Monolog.
-- [PPI](https://github.com/ppi/framework) comes out of the box with Monolog.
-- [CakePHP](http://cakephp.org/) is usable with Monolog via the [cakephp-monolog](https://github.com/jadb/cakephp-monolog) plugin.
-- [Slim](http://www.slimframework.com/) is usable with Monolog via the [Slim-Monolog](https://github.com/Flynsarmy/Slim-Monolog) log writer.
-- [XOOPS 2.6](http://xoops.org/) comes out of the box with Monolog.
-- [Aura.Web_Project](https://github.com/auraphp/Aura.Web_Project) comes out of the box with Monolog.
-- [Nette Framework](http://nette.org/en/) is usable with Monolog via the [contributte/monolog](https://github.com/contributte/monolog) or [orisai/nette-monolog](https://github.com/orisai/nette-monolog) extensions.
-- [Proton Micro Framework](https://github.com/alexbilbie/Proton) comes out of the box with Monolog.
-- [FuelPHP](http://fuelphp.com/) comes out of the box with Monolog.
-- [Equip Framework](https://github.com/equip/framework) comes out of the box with Monolog.
-- [Yii 2](http://www.yiiframework.com/) is usable with Monolog via the [yii2-monolog](https://github.com/merorafael/yii2-monolog) or [yii2-psr-log-target](https://github.com/samdark/yii2-psr-log-target) plugins.
-- [Hawkbit Micro Framework](https://github.com/HawkBitPhp/hawkbit) comes out of the box with Monolog.
-- [SilverStripe 4](https://www.silverstripe.org/) comes out of the box with Monolog.
-- [Drupal](https://www.drupal.org/) is usable with Monolog via the [monolog](https://www.drupal.org/project/monolog) module.
-- [Aimeos ecommerce framework](https://aimeos.org/) is usable with Monolog via the [ai-monolog](https://github.com/aimeos/ai-monolog) extension.
-- [Magento](https://magento.com/) comes out of the box with Monolog.
-
-### Author
-
-Jordi Boggiano - <j.boggiano@seld.be> - <http://twitter.com/seldaek><br />
-See also the list of [contributors](https://github.com/Seldaek/monolog/contributors) who participated in this project.
-
-### License
-
-Monolog is licensed under the MIT License - see the [LICENSE](LICENSE) file for details
-
-### Acknowledgements
-
-This library is heavily inspired by Python's [Logbook](https://logbook.readthedocs.io/en/stable/)
-library, although most concepts have been adjusted to fit to the PHP world.
+ [doc_3_x]: https://github.com/nikic/PHP-Parser/tree/3.x/doc
+ [doc_4_x]: https://github.com/nikic/PHP-Parser/tree/4.x/doc
+ [doc_master]: https://github.com/nikic/PHP-Parser/tree/master/doc
