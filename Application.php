@@ -1,1452 +1,1267 @@
 <?php
 
-namespace Illuminate\Foundation;
+/*
+ * This file is part of the Symfony package.
+ *
+ * (c) Fabien Potencier <fabien@symfony.com>
+ *
+ * For the full copyright and license information, please view the LICENSE
+ * file that was distributed with this source code.
+ */
 
-use Closure;
-use Illuminate\Container\Container;
-use Illuminate\Contracts\Foundation\Application as ApplicationContract;
-use Illuminate\Contracts\Foundation\CachesConfiguration;
-use Illuminate\Contracts\Foundation\CachesRoutes;
-use Illuminate\Contracts\Foundation\MaintenanceMode as MaintenanceModeContract;
-use Illuminate\Contracts\Http\Kernel as HttpKernelContract;
-use Illuminate\Events\EventServiceProvider;
-use Illuminate\Filesystem\Filesystem;
-use Illuminate\Foundation\Bootstrap\LoadEnvironmentVariables;
-use Illuminate\Foundation\Events\LocaleUpdated;
-use Illuminate\Http\Request;
-use Illuminate\Log\LogServiceProvider;
-use Illuminate\Routing\RoutingServiceProvider;
-use Illuminate\Support\Arr;
-use Illuminate\Support\Collection;
-use Illuminate\Support\Env;
-use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Str;
-use Illuminate\Support\Traits\Macroable;
-use RuntimeException;
-use Symfony\Component\HttpFoundation\Request as SymfonyRequest;
-use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
-use Symfony\Component\HttpKernel\Exception\HttpException;
-use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
-use Symfony\Component\HttpKernel\HttpKernelInterface;
+namespace Symfony\Component\Console;
 
-class Application extends Container implements ApplicationContract, CachesConfiguration, CachesRoutes, HttpKernelInterface
+use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Command\CompleteCommand;
+use Symfony\Component\Console\Command\DumpCompletionCommand;
+use Symfony\Component\Console\Command\HelpCommand;
+use Symfony\Component\Console\Command\LazyCommand;
+use Symfony\Component\Console\Command\ListCommand;
+use Symfony\Component\Console\Command\SignalableCommandInterface;
+use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
+use Symfony\Component\Console\Completion\CompletionInput;
+use Symfony\Component\Console\Completion\CompletionSuggestions;
+use Symfony\Component\Console\Event\ConsoleCommandEvent;
+use Symfony\Component\Console\Event\ConsoleErrorEvent;
+use Symfony\Component\Console\Event\ConsoleSignalEvent;
+use Symfony\Component\Console\Event\ConsoleTerminateEvent;
+use Symfony\Component\Console\Exception\CommandNotFoundException;
+use Symfony\Component\Console\Exception\ExceptionInterface;
+use Symfony\Component\Console\Exception\LogicException;
+use Symfony\Component\Console\Exception\NamespaceNotFoundException;
+use Symfony\Component\Console\Exception\RuntimeException;
+use Symfony\Component\Console\Formatter\OutputFormatter;
+use Symfony\Component\Console\Helper\DebugFormatterHelper;
+use Symfony\Component\Console\Helper\FormatterHelper;
+use Symfony\Component\Console\Helper\Helper;
+use Symfony\Component\Console\Helper\HelperSet;
+use Symfony\Component\Console\Helper\ProcessHelper;
+use Symfony\Component\Console\Helper\QuestionHelper;
+use Symfony\Component\Console\Input\ArgvInput;
+use Symfony\Component\Console\Input\ArrayInput;
+use Symfony\Component\Console\Input\InputArgument;
+use Symfony\Component\Console\Input\InputAwareInterface;
+use Symfony\Component\Console\Input\InputDefinition;
+use Symfony\Component\Console\Input\InputInterface;
+use Symfony\Component\Console\Input\InputOption;
+use Symfony\Component\Console\Output\ConsoleOutput;
+use Symfony\Component\Console\Output\ConsoleOutputInterface;
+use Symfony\Component\Console\Output\OutputInterface;
+use Symfony\Component\Console\SignalRegistry\SignalRegistry;
+use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\ErrorHandler\ErrorHandler;
+use Symfony\Contracts\EventDispatcher\EventDispatcherInterface;
+use Symfony\Contracts\Service\ResetInterface;
+
+/**
+ * An Application is the container for a collection of commands.
+ *
+ * It is the main entry point of a Console application.
+ *
+ * This class is optimized for a standard CLI environment.
+ *
+ * Usage:
+ *
+ *     $app = new Application('myapp', '1.0 (stable)');
+ *     $app->add(new SimpleCommand());
+ *     $app->run();
+ *
+ * @author Fabien Potencier <fabien@symfony.com>
+ */
+class Application implements ResetInterface
 {
-    use Macroable;
+    private array $commands = [];
+    private bool $wantHelps = false;
+    private $runningCommand = null;
+    private string $name;
+    private string $version;
+    private $commandLoader = null;
+    private bool $catchExceptions = true;
+    private bool $autoExit = true;
+    private $definition;
+    private $helperSet;
+    private $dispatcher = null;
+    private $terminal;
+    private string $defaultCommand;
+    private bool $singleCommand = false;
+    private bool $initialized = false;
+    private $signalRegistry;
+    private array $signalsToDispatchEvent = [];
 
-    /**
-     * The Laravel framework version.
-     *
-     * @var string
-     */
-    const VERSION = '9.52.21';
-
-    /**
-     * The base path for the Laravel installation.
-     *
-     * @var string
-     */
-    protected $basePath;
-
-    /**
-     * Indicates if the application has been bootstrapped before.
-     *
-     * @var bool
-     */
-    protected $hasBeenBootstrapped = false;
-
-    /**
-     * Indicates if the application has "booted".
-     *
-     * @var bool
-     */
-    protected $booted = false;
-
-    /**
-     * The array of booting callbacks.
-     *
-     * @var callable[]
-     */
-    protected $bootingCallbacks = [];
-
-    /**
-     * The array of booted callbacks.
-     *
-     * @var callable[]
-     */
-    protected $bootedCallbacks = [];
-
-    /**
-     * The array of terminating callbacks.
-     *
-     * @var callable[]
-     */
-    protected $terminatingCallbacks = [];
-
-    /**
-     * All of the registered service providers.
-     *
-     * @var \Illuminate\Support\ServiceProvider[]
-     */
-    protected $serviceProviders = [];
-
-    /**
-     * The names of the loaded service providers.
-     *
-     * @var array
-     */
-    protected $loadedProviders = [];
-
-    /**
-     * The deferred services and their providers.
-     *
-     * @var array
-     */
-    protected $deferredServices = [];
-
-    /**
-     * The custom application path defined by the developer.
-     *
-     * @var string
-     */
-    protected $appPath;
-
-    /**
-     * The custom database path defined by the developer.
-     *
-     * @var string
-     */
-    protected $databasePath;
-
-    /**
-     * The custom language file path defined by the developer.
-     *
-     * @var string
-     */
-    protected $langPath;
-
-    /**
-     * The custom storage path defined by the developer.
-     *
-     * @var string
-     */
-    protected $storagePath;
-
-    /**
-     * The custom environment path defined by the developer.
-     *
-     * @var string
-     */
-    protected $environmentPath;
-
-    /**
-     * The environment file to load during bootstrapping.
-     *
-     * @var string
-     */
-    protected $environmentFile = '.env';
-
-    /**
-     * Indicates if the application is running in the console.
-     *
-     * @var bool|null
-     */
-    protected $isRunningInConsole;
-
-    /**
-     * The application namespace.
-     *
-     * @var string
-     */
-    protected $namespace;
-
-    /**
-     * The prefixes of absolute cache paths for use during normalization.
-     *
-     * @var string[]
-     */
-    protected $absoluteCachePathPrefixes = ['/', '\\'];
-
-    /**
-     * Create a new Illuminate application instance.
-     *
-     * @param  string|null  $basePath
-     * @return void
-     */
-    public function __construct($basePath = null)
+    public function __construct(string $name = 'UNKNOWN', string $version = 'UNKNOWN')
     {
-        if ($basePath) {
-            $this->setBasePath($basePath);
-        }
-
-        $this->registerBaseBindings();
-        $this->registerBaseServiceProviders();
-        $this->registerCoreContainerAliases();
-        $this->registerLaravelCloudServices();
-    }
-
-    /**
-     * Get the version number of the application.
-     *
-     * @return string
-     */
-    public function version()
-    {
-        return static::VERSION;
-    }
-
-    /**
-     * Register the basic bindings into the container.
-     *
-     * @return void
-     */
-    protected function registerBaseBindings()
-    {
-        static::setInstance($this);
-
-        $this->instance('app', $this);
-
-        $this->instance(Container::class, $this);
-        $this->singleton(Mix::class);
-
-        $this->singleton(PackageManifest::class, function () {
-            return new PackageManifest(
-                new Filesystem, $this->basePath(), $this->getCachedPackagesPath()
-            );
-        });
-    }
-
-    /**
-     * Register all of the base service providers.
-     *
-     * @return void
-     */
-    protected function registerBaseServiceProviders()
-    {
-        $this->register(new EventServiceProvider($this));
-        $this->register(new LogServiceProvider($this));
-        $this->register(new RoutingServiceProvider($this));
-    }
-
-    /**
-     * Register any services needed for Laravel Cloud.
-     *
-     * @return void
-     */
-    protected function registerLaravelCloudServices()
-    {
-        if (! laravel_cloud()) {
-            return;
-        }
-
-        $this['events']->listen(
-            'bootstrapping: *',
-            fn ($bootstrapper) => Cloud::bootstrapperBootstrapping($this, Str::after($bootstrapper, 'bootstrapping: '))
-        );
-
-        $this['events']->listen(
-            'bootstrapped: *',
-            fn ($bootstrapper) => Cloud::bootstrapperBootstrapped($this, Str::after($bootstrapper, 'bootstrapped: '))
-        );
-    }
-
-    /**
-     * Run the given array of bootstrap classes.
-     *
-     * @param  string[]  $bootstrappers
-     * @return void
-     */
-    public function bootstrapWith(array $bootstrappers)
-    {
-        $this->hasBeenBootstrapped = true;
-
-        foreach ($bootstrappers as $bootstrapper) {
-            $this['events']->dispatch('bootstrapping: '.$bootstrapper, [$this]);
-
-            $this->make($bootstrapper)->bootstrap($this);
-
-            $this['events']->dispatch('bootstrapped: '.$bootstrapper, [$this]);
+        $this->name = $name;
+        $this->version = $version;
+        $this->terminal = new Terminal();
+        $this->defaultCommand = 'list';
+        if (\defined('SIGINT') && SignalRegistry::isSupported()) {
+            $this->signalRegistry = new SignalRegistry();
+            $this->signalsToDispatchEvent = [\SIGINT, \SIGTERM, \SIGUSR1, \SIGUSR2];
         }
     }
 
     /**
-     * Register a callback to run after loading the environment.
-     *
-     * @param  \Closure  $callback
-     * @return void
+     * @final
      */
-    public function afterLoadingEnvironment(Closure $callback)
+    public function setDispatcher(EventDispatcherInterface $dispatcher)
     {
-        $this->afterBootstrapping(
-            LoadEnvironmentVariables::class, $callback
-        );
+        $this->dispatcher = $dispatcher;
+    }
+
+    public function setCommandLoader(CommandLoaderInterface $commandLoader)
+    {
+        $this->commandLoader = $commandLoader;
+    }
+
+    public function getSignalRegistry(): SignalRegistry
+    {
+        if (!$this->signalRegistry) {
+            throw new RuntimeException('Signals are not supported. Make sure that the `pcntl` extension is installed and that "pcntl_*" functions are not disabled by your php.ini\'s "disable_functions" directive.');
+        }
+
+        return $this->signalRegistry;
+    }
+
+    public function setSignalsToDispatchEvent(int ...$signalsToDispatchEvent)
+    {
+        $this->signalsToDispatchEvent = $signalsToDispatchEvent;
     }
 
     /**
-     * Register a callback to run before a bootstrapper.
+     * Runs the current application.
      *
-     * @param  string  $bootstrapper
-     * @param  \Closure  $callback
-     * @return void
-     */
-    public function beforeBootstrapping($bootstrapper, Closure $callback)
-    {
-        $this['events']->listen('bootstrapping: '.$bootstrapper, $callback);
-    }
-
-    /**
-     * Register a callback to run after a bootstrapper.
+     * @return int 0 if everything went fine, or an error code
      *
-     * @param  string  $bootstrapper
-     * @param  \Closure  $callback
-     * @return void
+     * @throws \Exception When running fails. Bypass this when {@link setCatchExceptions()}.
      */
-    public function afterBootstrapping($bootstrapper, Closure $callback)
+    public function run(InputInterface $input = null, OutputInterface $output = null): int
     {
-        $this['events']->listen('bootstrapped: '.$bootstrapper, $callback);
-    }
+        if (\function_exists('putenv')) {
+            @putenv('LINES='.$this->terminal->getHeight());
+            @putenv('COLUMNS='.$this->terminal->getWidth());
+        }
 
-    /**
-     * Determine if the application has been bootstrapped before.
-     *
-     * @return bool
-     */
-    public function hasBeenBootstrapped()
-    {
-        return $this->hasBeenBootstrapped;
-    }
+        if (null === $input) {
+            $input = new ArgvInput();
+        }
 
-    /**
-     * Set the base path for the application.
-     *
-     * @param  string  $basePath
-     * @return $this
-     */
-    public function setBasePath($basePath)
-    {
-        $this->basePath = rtrim($basePath, '\/');
+        if (null === $output) {
+            $output = new ConsoleOutput();
+        }
 
-        $this->bindPathsInContainer();
-
-        return $this;
-    }
-
-    /**
-     * Bind all of the application paths in the container.
-     *
-     * @return void
-     */
-    protected function bindPathsInContainer()
-    {
-        $this->instance('path', $this->path());
-        $this->instance('path.base', $this->basePath());
-        $this->instance('path.config', $this->configPath());
-        $this->instance('path.public', $this->publicPath());
-        $this->instance('path.storage', $this->storagePath());
-        $this->instance('path.database', $this->databasePath());
-        $this->instance('path.resources', $this->resourcePath());
-        $this->instance('path.bootstrap', $this->bootstrapPath());
-
-        $this->useLangPath(value(function () {
-            if (is_dir($directory = $this->resourcePath('lang'))) {
-                return $directory;
+        $renderException = function (\Throwable $e) use ($output) {
+            if ($output instanceof ConsoleOutputInterface) {
+                $this->renderThrowable($e, $output->getErrorOutput());
+            } else {
+                $this->renderThrowable($e, $output);
             }
-
-            return $this->basePath('lang');
-        }));
-    }
-
-    /**
-     * Get the path to the application "app" directory.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function path($path = '')
-    {
-        $appPath = $this->appPath ?: $this->basePath.DIRECTORY_SEPARATOR.'app';
-
-        return $appPath.($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Set the application directory.
-     *
-     * @param  string  $path
-     * @return $this
-     */
-    public function useAppPath($path)
-    {
-        $this->appPath = $path;
-
-        $this->instance('path', $path);
-
-        return $this;
-    }
-
-    /**
-     * Get the base path of the Laravel installation.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function basePath($path = '')
-    {
-        return $this->basePath.($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Get the path to the bootstrap directory.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function bootstrapPath($path = '')
-    {
-        return $this->basePath.DIRECTORY_SEPARATOR.'bootstrap'.($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Get the path to the application configuration files.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function configPath($path = '')
-    {
-        return $this->basePath.DIRECTORY_SEPARATOR.'config'.($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Get the path to the database directory.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function databasePath($path = '')
-    {
-        return ($this->databasePath ?: $this->basePath.DIRECTORY_SEPARATOR.'database').($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Set the database directory.
-     *
-     * @param  string  $path
-     * @return $this
-     */
-    public function useDatabasePath($path)
-    {
-        $this->databasePath = $path;
-
-        $this->instance('path.database', $path);
-
-        return $this;
-    }
-
-    /**
-     * Get the path to the language files.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function langPath($path = '')
-    {
-        return $this->langPath.($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Set the language file directory.
-     *
-     * @param  string  $path
-     * @return $this
-     */
-    public function useLangPath($path)
-    {
-        $this->langPath = $path;
-
-        $this->instance('path.lang', $path);
-
-        return $this;
-    }
-
-    /**
-     * Get the path to the public / web directory.
-     *
-     * @return string
-     */
-    public function publicPath()
-    {
-        return $this->basePath.DIRECTORY_SEPARATOR.'public';
-    }
-
-    /**
-     * Get the path to the storage directory.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function storagePath($path = '')
-    {
-        return ($this->storagePath ?: $this->basePath.DIRECTORY_SEPARATOR.'storage')
-                            .($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Set the storage directory.
-     *
-     * @param  string  $path
-     * @return $this
-     */
-    public function useStoragePath($path)
-    {
-        $this->storagePath = $path;
-
-        $this->instance('path.storage', $path);
-
-        return $this;
-    }
-
-    /**
-     * Get the path to the resources directory.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function resourcePath($path = '')
-    {
-        return $this->basePath.DIRECTORY_SEPARATOR.'resources'.($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Get the path to the views directory.
-     *
-     * This method returns the first configured path in the array of view paths.
-     *
-     * @param  string  $path
-     * @return string
-     */
-    public function viewPath($path = '')
-    {
-        $basePath = $this['config']->get('view.paths')[0];
-
-        return rtrim($basePath, DIRECTORY_SEPARATOR).($path != '' ? DIRECTORY_SEPARATOR.$path : '');
-    }
-
-    /**
-     * Get the path to the environment file directory.
-     *
-     * @return string
-     */
-    public function environmentPath()
-    {
-        return $this->environmentPath ?: $this->basePath;
-    }
-
-    /**
-     * Set the directory for the environment file.
-     *
-     * @param  string  $path
-     * @return $this
-     */
-    public function useEnvironmentPath($path)
-    {
-        $this->environmentPath = $path;
-
-        return $this;
-    }
-
-    /**
-     * Set the environment file to be loaded during bootstrapping.
-     *
-     * @param  string  $file
-     * @return $this
-     */
-    public function loadEnvironmentFrom($file)
-    {
-        $this->environmentFile = $file;
-
-        return $this;
-    }
-
-    /**
-     * Get the environment file the application is using.
-     *
-     * @return string
-     */
-    public function environmentFile()
-    {
-        return $this->environmentFile ?: '.env';
-    }
-
-    /**
-     * Get the fully qualified path to the environment file.
-     *
-     * @return string
-     */
-    public function environmentFilePath()
-    {
-        return $this->environmentPath().DIRECTORY_SEPARATOR.$this->environmentFile();
-    }
-
-    /**
-     * Get or check the current application environment.
-     *
-     * @param  string|array  ...$environments
-     * @return string|bool
-     */
-    public function environment(...$environments)
-    {
-        if (count($environments) > 0) {
-            $patterns = is_array($environments[0]) ? $environments[0] : $environments;
-
-            return Str::is($patterns, $this['env']);
-        }
-
-        return $this['env'];
-    }
-
-    /**
-     * Determine if the application is in the local environment.
-     *
-     * @return bool
-     */
-    public function isLocal()
-    {
-        return $this['env'] === 'local';
-    }
-
-    /**
-     * Determine if the application is in the production environment.
-     *
-     * @return bool
-     */
-    public function isProduction()
-    {
-        return $this['env'] === 'production';
-    }
-
-    /**
-     * Detect the application's current environment.
-     *
-     * @param  \Closure  $callback
-     * @return string
-     */
-    public function detectEnvironment(Closure $callback)
-    {
-        $args = $this->runningInConsole() && isset($_SERVER['argv'])
-            ? $_SERVER['argv']
-            : null;
-
-        return $this['env'] = (new EnvironmentDetector)->detect($callback, $args);
-    }
-
-    /**
-     * Determine if the application is running in the console.
-     *
-     * @return bool
-     */
-    public function runningInConsole()
-    {
-        if ($this->isRunningInConsole === null) {
-            $this->isRunningInConsole = Env::get('APP_RUNNING_IN_CONSOLE') ?? (\PHP_SAPI === 'cli' || \PHP_SAPI === 'phpdbg');
-        }
-
-        return $this->isRunningInConsole;
-    }
-
-    /**
-     * Determine if the application is running unit tests.
-     *
-     * @return bool
-     */
-    public function runningUnitTests()
-    {
-        return $this->bound('env') && $this['env'] === 'testing';
-    }
-
-    /**
-     * Determine if the application is running with debug mode enabled.
-     *
-     * @return bool
-     */
-    public function hasDebugModeEnabled()
-    {
-        return (bool) $this['config']->get('app.debug');
-    }
-
-    /**
-     * Register all of the configured providers.
-     *
-     * @return void
-     */
-    public function registerConfiguredProviders()
-    {
-        $providers = Collection::make($this->make('config')->get('app.providers'))
-                        ->partition(fn ($provider) => str_starts_with($provider, 'Illuminate\\'));
-
-        $providers->splice(1, 0, [$this->make(PackageManifest::class)->providers()]);
-
-        (new ProviderRepository($this, new Filesystem, $this->getCachedServicesPath()))
-                    ->load($providers->collapse()->toArray());
-    }
-
-    /**
-     * Register a service provider with the application.
-     *
-     * @param  \Illuminate\Support\ServiceProvider|string  $provider
-     * @param  bool  $force
-     * @return \Illuminate\Support\ServiceProvider
-     */
-    public function register($provider, $force = false)
-    {
-        if (($registered = $this->getProvider($provider)) && ! $force) {
-            return $registered;
-        }
-
-        // If the given "provider" is a string, we will resolve it, passing in the
-        // application instance automatically for the developer. This is simply
-        // a more convenient way of specifying your service provider classes.
-        if (is_string($provider)) {
-            $provider = $this->resolveProvider($provider);
-        }
-
-        $provider->register();
-
-        // If there are bindings / singletons set as properties on the provider we
-        // will spin through them and register them with the application, which
-        // serves as a convenience layer while registering a lot of bindings.
-        if (property_exists($provider, 'bindings')) {
-            foreach ($provider->bindings as $key => $value) {
-                $this->bind($key, $value);
+        };
+        if ($phpHandler = set_exception_handler($renderException)) {
+            restore_exception_handler();
+            if (!\is_array($phpHandler) || !$phpHandler[0] instanceof ErrorHandler) {
+                $errorHandler = true;
+            } elseif ($errorHandler = $phpHandler[0]->setExceptionHandler($renderException)) {
+                $phpHandler[0]->setExceptionHandler($errorHandler);
             }
         }
 
-        if (property_exists($provider, 'singletons')) {
-            foreach ($provider->singletons as $key => $value) {
-                $key = is_int($key) ? $value : $key;
+        $this->configureIO($input, $output);
 
-                $this->singleton($key, $value);
+        try {
+            $exitCode = $this->doRun($input, $output);
+        } catch (\Exception $e) {
+            if (!$this->catchExceptions) {
+                throw $e;
             }
-        }
 
-        $this->markAsRegistered($provider);
-
-        // If the application has already booted, we will call this boot method on
-        // the provider class so it has an opportunity to do its boot logic and
-        // will be ready for any usage by this developer's application logic.
-        if ($this->isBooted()) {
-            $this->bootProvider($provider);
-        }
-
-        return $provider;
-    }
-
-    /**
-     * Get the registered service provider instance if it exists.
-     *
-     * @param  \Illuminate\Support\ServiceProvider|string  $provider
-     * @return \Illuminate\Support\ServiceProvider|null
-     */
-    public function getProvider($provider)
-    {
-        return array_values($this->getProviders($provider))[0] ?? null;
-    }
-
-    /**
-     * Get the registered service provider instances if any exist.
-     *
-     * @param  \Illuminate\Support\ServiceProvider|string  $provider
-     * @return array
-     */
-    public function getProviders($provider)
-    {
-        $name = is_string($provider) ? $provider : get_class($provider);
-
-        return Arr::where($this->serviceProviders, fn ($value) => $value instanceof $name);
-    }
-
-    /**
-     * Resolve a service provider instance from the class name.
-     *
-     * @param  string  $provider
-     * @return \Illuminate\Support\ServiceProvider
-     */
-    public function resolveProvider($provider)
-    {
-        return new $provider($this);
-    }
-
-    /**
-     * Mark the given provider as registered.
-     *
-     * @param  \Illuminate\Support\ServiceProvider  $provider
-     * @return void
-     */
-    protected function markAsRegistered($provider)
-    {
-        $this->serviceProviders[] = $provider;
-
-        $this->loadedProviders[get_class($provider)] = true;
-    }
-
-    /**
-     * Load and boot all of the remaining deferred providers.
-     *
-     * @return void
-     */
-    public function loadDeferredProviders()
-    {
-        // We will simply spin through each of the deferred providers and register each
-        // one and boot them if the application has booted. This should make each of
-        // the remaining services available to this application for immediate use.
-        foreach ($this->deferredServices as $service => $provider) {
-            $this->loadDeferredProvider($service);
-        }
-
-        $this->deferredServices = [];
-    }
-
-    /**
-     * Load the provider for a deferred service.
-     *
-     * @param  string  $service
-     * @return void
-     */
-    public function loadDeferredProvider($service)
-    {
-        if (! $this->isDeferredService($service)) {
-            return;
-        }
-
-        $provider = $this->deferredServices[$service];
-
-        // If the service provider has not already been loaded and registered we can
-        // register it with the application and remove the service from this list
-        // of deferred services, since it will already be loaded on subsequent.
-        if (! isset($this->loadedProviders[$provider])) {
-            $this->registerDeferredProvider($provider, $service);
-        }
-    }
-
-    /**
-     * Register a deferred provider and service.
-     *
-     * @param  string  $provider
-     * @param  string|null  $service
-     * @return void
-     */
-    public function registerDeferredProvider($provider, $service = null)
-    {
-        // Once the provider that provides the deferred service has been registered we
-        // will remove it from our local list of the deferred services with related
-        // providers so that this container does not try to resolve it out again.
-        if ($service) {
-            unset($this->deferredServices[$service]);
-        }
-
-        $this->register($instance = new $provider($this));
-
-        if (! $this->isBooted()) {
-            $this->booting(function () use ($instance) {
-                $this->bootProvider($instance);
-            });
-        }
-    }
-
-    /**
-     * Resolve the given type from the container.
-     *
-     * @param  string  $abstract
-     * @param  array  $parameters
-     * @return mixed
-     */
-    public function make($abstract, array $parameters = [])
-    {
-        $this->loadDeferredProviderIfNeeded($abstract = $this->getAlias($abstract));
-
-        return parent::make($abstract, $parameters);
-    }
-
-    /**
-     * Resolve the given type from the container.
-     *
-     * @param  string  $abstract
-     * @param  array  $parameters
-     * @param  bool  $raiseEvents
-     * @return mixed
-     */
-    protected function resolve($abstract, $parameters = [], $raiseEvents = true)
-    {
-        $this->loadDeferredProviderIfNeeded($abstract = $this->getAlias($abstract));
-
-        return parent::resolve($abstract, $parameters, $raiseEvents);
-    }
-
-    /**
-     * Load the deferred provider if the given type is a deferred service and the instance has not been loaded.
-     *
-     * @param  string  $abstract
-     * @return void
-     */
-    protected function loadDeferredProviderIfNeeded($abstract)
-    {
-        if ($this->isDeferredService($abstract) && ! isset($this->instances[$abstract])) {
-            $this->loadDeferredProvider($abstract);
-        }
-    }
-
-    /**
-     * Determine if the given abstract type has been bound.
-     *
-     * @param  string  $abstract
-     * @return bool
-     */
-    public function bound($abstract)
-    {
-        return $this->isDeferredService($abstract) || parent::bound($abstract);
-    }
-
-    /**
-     * Determine if the application has booted.
-     *
-     * @return bool
-     */
-    public function isBooted()
-    {
-        return $this->booted;
-    }
-
-    /**
-     * Boot the application's service providers.
-     *
-     * @return void
-     */
-    public function boot()
-    {
-        if ($this->isBooted()) {
-            return;
-        }
-
-        // Once the application has booted we will also fire some "booted" callbacks
-        // for any listeners that need to do work after this initial booting gets
-        // finished. This is useful when ordering the boot-up processes we run.
-        $this->fireAppCallbacks($this->bootingCallbacks);
-
-        array_walk($this->serviceProviders, function ($p) {
-            $this->bootProvider($p);
-        });
-
-        $this->booted = true;
-
-        $this->fireAppCallbacks($this->bootedCallbacks);
-    }
-
-    /**
-     * Boot the given service provider.
-     *
-     * @param  \Illuminate\Support\ServiceProvider  $provider
-     * @return void
-     */
-    protected function bootProvider(ServiceProvider $provider)
-    {
-        $provider->callBootingCallbacks();
-
-        if (method_exists($provider, 'boot')) {
-            $this->call([$provider, 'boot']);
-        }
-
-        $provider->callBootedCallbacks();
-    }
-
-    /**
-     * Register a new boot listener.
-     *
-     * @param  callable  $callback
-     * @return void
-     */
-    public function booting($callback)
-    {
-        $this->bootingCallbacks[] = $callback;
-    }
-
-    /**
-     * Register a new "booted" listener.
-     *
-     * @param  callable  $callback
-     * @return void
-     */
-    public function booted($callback)
-    {
-        $this->bootedCallbacks[] = $callback;
-
-        if ($this->isBooted()) {
-            $callback($this);
-        }
-    }
-
-    /**
-     * Call the booting callbacks for the application.
-     *
-     * @param  callable[]  $callbacks
-     * @return void
-     */
-    protected function fireAppCallbacks(array &$callbacks)
-    {
-        $index = 0;
-
-        while ($index < count($callbacks)) {
-            $callbacks[$index]($this);
-
-            $index++;
-        }
-    }
-
-    /**
-     * {@inheritdoc}
-     *
-     * @return \Symfony\Component\HttpFoundation\Response
-     */
-    public function handle(SymfonyRequest $request, int $type = self::MAIN_REQUEST, bool $catch = true): SymfonyResponse
-    {
-        return $this[HttpKernelContract::class]->handle(Request::createFromBase($request));
-    }
-
-    /**
-     * Determine if middleware has been disabled for the application.
-     *
-     * @return bool
-     */
-    public function shouldSkipMiddleware()
-    {
-        return $this->bound('middleware.disable') &&
-               $this->make('middleware.disable') === true;
-    }
-
-    /**
-     * Get the path to the cached services.php file.
-     *
-     * @return string
-     */
-    public function getCachedServicesPath()
-    {
-        return $this->normalizeCachePath('APP_SERVICES_CACHE', 'cache/services.php');
-    }
-
-    /**
-     * Get the path to the cached packages.php file.
-     *
-     * @return string
-     */
-    public function getCachedPackagesPath()
-    {
-        return $this->normalizeCachePath('APP_PACKAGES_CACHE', 'cache/packages.php');
-    }
-
-    /**
-     * Determine if the application configuration is cached.
-     *
-     * @return bool
-     */
-    public function configurationIsCached()
-    {
-        return is_file($this->getCachedConfigPath());
-    }
-
-    /**
-     * Get the path to the configuration cache file.
-     *
-     * @return string
-     */
-    public function getCachedConfigPath()
-    {
-        return $this->normalizeCachePath('APP_CONFIG_CACHE', 'cache/config.php');
-    }
-
-    /**
-     * Determine if the application routes are cached.
-     *
-     * @return bool
-     */
-    public function routesAreCached()
-    {
-        return $this['files']->exists($this->getCachedRoutesPath());
-    }
-
-    /**
-     * Get the path to the routes cache file.
-     *
-     * @return string
-     */
-    public function getCachedRoutesPath()
-    {
-        return $this->normalizeCachePath('APP_ROUTES_CACHE', 'cache/routes-v7.php');
-    }
-
-    /**
-     * Determine if the application events are cached.
-     *
-     * @return bool
-     */
-    public function eventsAreCached()
-    {
-        return $this['files']->exists($this->getCachedEventsPath());
-    }
-
-    /**
-     * Get the path to the events cache file.
-     *
-     * @return string
-     */
-    public function getCachedEventsPath()
-    {
-        return $this->normalizeCachePath('APP_EVENTS_CACHE', 'cache/events.php');
-    }
-
-    /**
-     * Normalize a relative or absolute path to a cache file.
-     *
-     * @param  string  $key
-     * @param  string  $default
-     * @return string
-     */
-    protected function normalizeCachePath($key, $default)
-    {
-        if (is_null($env = Env::get($key))) {
-            return $this->bootstrapPath($default);
-        }
-
-        return Str::startsWith($env, $this->absoluteCachePathPrefixes)
-                ? $env
-                : $this->basePath($env);
-    }
-
-    /**
-     * Add new prefix to list of absolute path prefixes.
-     *
-     * @param  string  $prefix
-     * @return $this
-     */
-    public function addAbsoluteCachePathPrefix($prefix)
-    {
-        $this->absoluteCachePathPrefixes[] = $prefix;
-
-        return $this;
-    }
-
-    /**
-     * Get an instance of the maintenance mode manager implementation.
-     *
-     * @return \Illuminate\Contracts\Foundation\MaintenanceMode
-     */
-    public function maintenanceMode()
-    {
-        return $this->make(MaintenanceModeContract::class);
-    }
-
-    /**
-     * Determine if the application is currently down for maintenance.
-     *
-     * @return bool
-     */
-    public function isDownForMaintenance()
-    {
-        return $this->maintenanceMode()->active();
-    }
-
-    /**
-     * Throw an HttpException with the given data.
-     *
-     * @param  int  $code
-     * @param  string  $message
-     * @param  array  $headers
-     * @return never
-     *
-     * @throws \Symfony\Component\HttpKernel\Exception\HttpException
-     * @throws \Symfony\Component\HttpKernel\Exception\NotFoundHttpException
-     */
-    public function abort($code, $message = '', array $headers = [])
-    {
-        if ($code == 404) {
-            throw new NotFoundHttpException($message);
-        }
-
-        throw new HttpException($code, $message, null, $headers);
-    }
-
-    /**
-     * Register a terminating callback with the application.
-     *
-     * @param  callable|string  $callback
-     * @return $this
-     */
-    public function terminating($callback)
-    {
-        $this->terminatingCallbacks[] = $callback;
-
-        return $this;
-    }
-
-    /**
-     * Terminate the application.
-     *
-     * @return void
-     */
-    public function terminate()
-    {
-        $index = 0;
-
-        while ($index < count($this->terminatingCallbacks)) {
-            $this->call($this->terminatingCallbacks[$index]);
-
-            $index++;
-        }
-    }
-
-    /**
-     * Get the service providers that have been loaded.
-     *
-     * @return array
-     */
-    public function getLoadedProviders()
-    {
-        return $this->loadedProviders;
-    }
-
-    /**
-     * Determine if the given service provider is loaded.
-     *
-     * @param  string  $provider
-     * @return bool
-     */
-    public function providerIsLoaded(string $provider)
-    {
-        return isset($this->loadedProviders[$provider]);
-    }
-
-    /**
-     * Get the application's deferred services.
-     *
-     * @return array
-     */
-    public function getDeferredServices()
-    {
-        return $this->deferredServices;
-    }
-
-    /**
-     * Set the application's deferred services.
-     *
-     * @param  array  $services
-     * @return void
-     */
-    public function setDeferredServices(array $services)
-    {
-        $this->deferredServices = $services;
-    }
-
-    /**
-     * Add an array of services to the application's deferred services.
-     *
-     * @param  array  $services
-     * @return void
-     */
-    public function addDeferredServices(array $services)
-    {
-        $this->deferredServices = array_merge($this->deferredServices, $services);
-    }
-
-    /**
-     * Determine if the given service is a deferred service.
-     *
-     * @param  string  $service
-     * @return bool
-     */
-    public function isDeferredService($service)
-    {
-        return isset($this->deferredServices[$service]);
-    }
-
-    /**
-     * Configure the real-time facade namespace.
-     *
-     * @param  string  $namespace
-     * @return void
-     */
-    public function provideFacades($namespace)
-    {
-        AliasLoader::setFacadeNamespace($namespace);
-    }
-
-    /**
-     * Get the current application locale.
-     *
-     * @return string
-     */
-    public function getLocale()
-    {
-        return $this['config']->get('app.locale');
-    }
-
-    /**
-     * Get the current application locale.
-     *
-     * @return string
-     */
-    public function currentLocale()
-    {
-        return $this->getLocale();
-    }
-
-    /**
-     * Get the current application fallback locale.
-     *
-     * @return string
-     */
-    public function getFallbackLocale()
-    {
-        return $this['config']->get('app.fallback_locale');
-    }
-
-    /**
-     * Set the current application locale.
-     *
-     * @param  string  $locale
-     * @return void
-     */
-    public function setLocale($locale)
-    {
-        $this['config']->set('app.locale', $locale);
-
-        $this['translator']->setLocale($locale);
-
-        $this['events']->dispatch(new LocaleUpdated($locale));
-    }
-
-    /**
-     * Set the current application fallback locale.
-     *
-     * @param  string  $fallbackLocale
-     * @return void
-     */
-    public function setFallbackLocale($fallbackLocale)
-    {
-        $this['config']->set('app.fallback_locale', $fallbackLocale);
-
-        $this['translator']->setFallback($fallbackLocale);
-    }
-
-    /**
-     * Determine if the application locale is the given locale.
-     *
-     * @param  string  $locale
-     * @return bool
-     */
-    public function isLocale($locale)
-    {
-        return $this->getLocale() == $locale;
-    }
-
-    /**
-     * Register the core class aliases in the container.
-     *
-     * @return void
-     */
-    public function registerCoreContainerAliases()
-    {
-        foreach ([
-            'app' => [self::class, \Illuminate\Contracts\Container\Container::class, \Illuminate\Contracts\Foundation\Application::class, \Psr\Container\ContainerInterface::class],
-            'auth' => [\Illuminate\Auth\AuthManager::class, \Illuminate\Contracts\Auth\Factory::class],
-            'auth.driver' => [\Illuminate\Contracts\Auth\Guard::class],
-            'blade.compiler' => [\Illuminate\View\Compilers\BladeCompiler::class],
-            'cache' => [\Illuminate\Cache\CacheManager::class, \Illuminate\Contracts\Cache\Factory::class],
-            'cache.store' => [\Illuminate\Cache\Repository::class, \Illuminate\Contracts\Cache\Repository::class, \Psr\SimpleCache\CacheInterface::class],
-            'cache.psr6' => [\Symfony\Component\Cache\Adapter\Psr16Adapter::class, \Symfony\Component\Cache\Adapter\AdapterInterface::class, \Psr\Cache\CacheItemPoolInterface::class],
-            'config' => [\Illuminate\Config\Repository::class, \Illuminate\Contracts\Config\Repository::class],
-            'cookie' => [\Illuminate\Cookie\CookieJar::class, \Illuminate\Contracts\Cookie\Factory::class, \Illuminate\Contracts\Cookie\QueueingFactory::class],
-            'db' => [\Illuminate\Database\DatabaseManager::class, \Illuminate\Database\ConnectionResolverInterface::class],
-            'db.connection' => [\Illuminate\Database\Connection::class, \Illuminate\Database\ConnectionInterface::class],
-            'db.schema' => [\Illuminate\Database\Schema\Builder::class],
-            'encrypter' => [\Illuminate\Encryption\Encrypter::class, \Illuminate\Contracts\Encryption\Encrypter::class, \Illuminate\Contracts\Encryption\StringEncrypter::class],
-            'events' => [\Illuminate\Events\Dispatcher::class, \Illuminate\Contracts\Events\Dispatcher::class],
-            'files' => [\Illuminate\Filesystem\Filesystem::class],
-            'filesystem' => [\Illuminate\Filesystem\FilesystemManager::class, \Illuminate\Contracts\Filesystem\Factory::class],
-            'filesystem.disk' => [\Illuminate\Contracts\Filesystem\Filesystem::class],
-            'filesystem.cloud' => [\Illuminate\Contracts\Filesystem\Cloud::class],
-            'hash' => [\Illuminate\Hashing\HashManager::class],
-            'hash.driver' => [\Illuminate\Contracts\Hashing\Hasher::class],
-            'translator' => [\Illuminate\Translation\Translator::class, \Illuminate\Contracts\Translation\Translator::class],
-            'log' => [\Illuminate\Log\LogManager::class, \Psr\Log\LoggerInterface::class],
-            'mail.manager' => [\Illuminate\Mail\MailManager::class, \Illuminate\Contracts\Mail\Factory::class],
-            'mailer' => [\Illuminate\Mail\Mailer::class, \Illuminate\Contracts\Mail\Mailer::class, \Illuminate\Contracts\Mail\MailQueue::class],
-            'auth.password' => [\Illuminate\Auth\Passwords\PasswordBrokerManager::class, \Illuminate\Contracts\Auth\PasswordBrokerFactory::class],
-            'auth.password.broker' => [\Illuminate\Auth\Passwords\PasswordBroker::class, \Illuminate\Contracts\Auth\PasswordBroker::class],
-            'queue' => [\Illuminate\Queue\QueueManager::class, \Illuminate\Contracts\Queue\Factory::class, \Illuminate\Contracts\Queue\Monitor::class],
-            'queue.connection' => [\Illuminate\Contracts\Queue\Queue::class],
-            'queue.failer' => [\Illuminate\Queue\Failed\FailedJobProviderInterface::class],
-            'redirect' => [\Illuminate\Routing\Redirector::class],
-            'redis' => [\Illuminate\Redis\RedisManager::class, \Illuminate\Contracts\Redis\Factory::class],
-            'redis.connection' => [\Illuminate\Redis\Connections\Connection::class, \Illuminate\Contracts\Redis\Connection::class],
-            'request' => [\Illuminate\Http\Request::class, \Symfony\Component\HttpFoundation\Request::class],
-            'router' => [\Illuminate\Routing\Router::class, \Illuminate\Contracts\Routing\Registrar::class, \Illuminate\Contracts\Routing\BindingRegistrar::class],
-            'session' => [\Illuminate\Session\SessionManager::class],
-            'session.store' => [\Illuminate\Session\Store::class, \Illuminate\Contracts\Session\Session::class],
-            'url' => [\Illuminate\Routing\UrlGenerator::class, \Illuminate\Contracts\Routing\UrlGenerator::class],
-            'validator' => [\Illuminate\Validation\Factory::class, \Illuminate\Contracts\Validation\Factory::class],
-            'view' => [\Illuminate\View\Factory::class, \Illuminate\Contracts\View\Factory::class],
-        ] as $key => $aliases) {
-            foreach ($aliases as $alias) {
-                $this->alias($key, $alias);
+            $renderException($e);
+
+            $exitCode = $e->getCode();
+            if (is_numeric($exitCode)) {
+                $exitCode = (int) $exitCode;
+                if ($exitCode <= 0) {
+                    $exitCode = 1;
+                }
+            } else {
+                $exitCode = 1;
             }
-        }
-    }
-
-    /**
-     * Flush the container of all bindings and resolved instances.
-     *
-     * @return void
-     */
-    public function flush()
-    {
-        parent::flush();
-
-        $this->buildStack = [];
-        $this->loadedProviders = [];
-        $this->bootedCallbacks = [];
-        $this->bootingCallbacks = [];
-        $this->deferredServices = [];
-        $this->reboundCallbacks = [];
-        $this->serviceProviders = [];
-        $this->resolvingCallbacks = [];
-        $this->terminatingCallbacks = [];
-        $this->beforeResolvingCallbacks = [];
-        $this->afterResolvingCallbacks = [];
-        $this->globalBeforeResolvingCallbacks = [];
-        $this->globalResolvingCallbacks = [];
-        $this->globalAfterResolvingCallbacks = [];
-    }
-
-    /**
-     * Get the application namespace.
-     *
-     * @return string
-     *
-     * @throws \RuntimeException
-     */
-    public function getNamespace()
-    {
-        if (! is_null($this->namespace)) {
-            return $this->namespace;
-        }
-
-        $composer = json_decode(file_get_contents($this->basePath('composer.json')), true);
-
-        foreach ((array) data_get($composer, 'autoload.psr-4') as $namespace => $path) {
-            foreach ((array) $path as $pathChoice) {
-                if (realpath($this->path()) === realpath($this->basePath($pathChoice))) {
-                    return $this->namespace = $namespace;
+        } finally {
+            // if the exception handler changed, keep it
+            // otherwise, unregister $renderException
+            if (!$phpHandler) {
+                if (set_exception_handler($renderException) === $renderException) {
+                    restore_exception_handler();
+                }
+                restore_exception_handler();
+            } elseif (!$errorHandler) {
+                $finalHandler = $phpHandler[0]->setExceptionHandler(null);
+                if ($finalHandler !== $renderException) {
+                    $phpHandler[0]->setExceptionHandler($finalHandler);
                 }
             }
         }
 
-        throw new RuntimeException('Unable to detect application namespace.');
+        if ($this->autoExit) {
+            if ($exitCode > 255) {
+                $exitCode = 255;
+            }
+
+            exit($exitCode);
+        }
+
+        return $exitCode;
+    }
+
+    /**
+     * Runs the current application.
+     *
+     * @return int 0 if everything went fine, or an error code
+     */
+    public function doRun(InputInterface $input, OutputInterface $output)
+    {
+        if (true === $input->hasParameterOption(['--version', '-V'], true)) {
+            $output->writeln($this->getLongVersion());
+
+            return 0;
+        }
+
+        try {
+            // Makes ArgvInput::getFirstArgument() able to distinguish an option from an argument.
+            $input->bind($this->getDefinition());
+        } catch (ExceptionInterface $e) {
+            // Errors must be ignored, full binding/validation happens later when the command is known.
+        }
+
+        $name = $this->getCommandName($input);
+        if (true === $input->hasParameterOption(['--help', '-h'], true)) {
+            if (!$name) {
+                $name = 'help';
+                $input = new ArrayInput(['command_name' => $this->defaultCommand]);
+            } else {
+                $this->wantHelps = true;
+            }
+        }
+
+        if (!$name) {
+            $name = $this->defaultCommand;
+            $definition = $this->getDefinition();
+            $definition->setArguments(array_merge(
+                $definition->getArguments(),
+                [
+                    'command' => new InputArgument('command', InputArgument::OPTIONAL, $definition->getArgument('command')->getDescription(), $name),
+                ]
+            ));
+        }
+
+        try {
+            $this->runningCommand = null;
+            // the command name MUST be the first element of the input
+            $command = $this->find($name);
+        } catch (\Throwable $e) {
+            if (!($e instanceof CommandNotFoundException && !$e instanceof NamespaceNotFoundException) || 1 !== \count($alternatives = $e->getAlternatives()) || !$input->isInteractive()) {
+                if (null !== $this->dispatcher) {
+                    $event = new ConsoleErrorEvent($input, $output, $e);
+                    $this->dispatcher->dispatch($event, ConsoleEvents::ERROR);
+
+                    if (0 === $event->getExitCode()) {
+                        return 0;
+                    }
+
+                    $e = $event->getError();
+                }
+
+                throw $e;
+            }
+
+            $alternative = $alternatives[0];
+
+            $style = new SymfonyStyle($input, $output);
+            $output->writeln('');
+            $formattedBlock = (new FormatterHelper())->formatBlock(sprintf('Command "%s" is not defined.', $name), 'error', true);
+            $output->writeln($formattedBlock);
+            if (!$style->confirm(sprintf('Do you want to run "%s" instead? ', $alternative), false)) {
+                if (null !== $this->dispatcher) {
+                    $event = new ConsoleErrorEvent($input, $output, $e);
+                    $this->dispatcher->dispatch($event, ConsoleEvents::ERROR);
+
+                    return $event->getExitCode();
+                }
+
+                return 1;
+            }
+
+            $command = $this->find($alternative);
+        }
+
+        if ($command instanceof LazyCommand) {
+            $command = $command->getCommand();
+        }
+
+        $this->runningCommand = $command;
+        $exitCode = $this->doRunCommand($command, $input, $output);
+        $this->runningCommand = null;
+
+        return $exitCode;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function reset()
+    {
+    }
+
+    public function setHelperSet(HelperSet $helperSet)
+    {
+        $this->helperSet = $helperSet;
+    }
+
+    /**
+     * Get the helper set associated with the command.
+     */
+    public function getHelperSet(): HelperSet
+    {
+        return $this->helperSet ??= $this->getDefaultHelperSet();
+    }
+
+    public function setDefinition(InputDefinition $definition)
+    {
+        $this->definition = $definition;
+    }
+
+    /**
+     * Gets the InputDefinition related to this Application.
+     */
+    public function getDefinition(): InputDefinition
+    {
+        $this->definition ??= $this->getDefaultInputDefinition();
+
+        if ($this->singleCommand) {
+            $inputDefinition = $this->definition;
+            $inputDefinition->setArguments();
+
+            return $inputDefinition;
+        }
+
+        return $this->definition;
+    }
+
+    /**
+     * Adds suggestions to $suggestions for the current completion input (e.g. option or argument).
+     */
+    public function complete(CompletionInput $input, CompletionSuggestions $suggestions): void
+    {
+        if (
+            CompletionInput::TYPE_ARGUMENT_VALUE === $input->getCompletionType()
+            && 'command' === $input->getCompletionName()
+        ) {
+            $commandNames = [];
+            foreach ($this->all() as $name => $command) {
+                // skip hidden commands and aliased commands as they already get added below
+                if ($command->isHidden() || $command->getName() !== $name) {
+                    continue;
+                }
+                $commandNames[] = $command->getName();
+                foreach ($command->getAliases() as $name) {
+                    $commandNames[] = $name;
+                }
+            }
+            $suggestions->suggestValues(array_filter($commandNames));
+
+            return;
+        }
+
+        if (CompletionInput::TYPE_OPTION_NAME === $input->getCompletionType()) {
+            $suggestions->suggestOptions($this->getDefinition()->getOptions());
+
+            return;
+        }
+    }
+
+    /**
+     * Gets the help message.
+     */
+    public function getHelp(): string
+    {
+        return $this->getLongVersion();
+    }
+
+    /**
+     * Gets whether to catch exceptions or not during commands execution.
+     */
+    public function areExceptionsCaught(): bool
+    {
+        return $this->catchExceptions;
+    }
+
+    /**
+     * Sets whether to catch exceptions or not during commands execution.
+     */
+    public function setCatchExceptions(bool $boolean)
+    {
+        $this->catchExceptions = $boolean;
+    }
+
+    /**
+     * Gets whether to automatically exit after a command execution or not.
+     */
+    public function isAutoExitEnabled(): bool
+    {
+        return $this->autoExit;
+    }
+
+    /**
+     * Sets whether to automatically exit after a command execution or not.
+     */
+    public function setAutoExit(bool $boolean)
+    {
+        $this->autoExit = $boolean;
+    }
+
+    /**
+     * Gets the name of the application.
+     */
+    public function getName(): string
+    {
+        return $this->name;
+    }
+
+    /**
+     * Sets the application name.
+     **/
+    public function setName(string $name)
+    {
+        $this->name = $name;
+    }
+
+    /**
+     * Gets the application version.
+     */
+    public function getVersion(): string
+    {
+        return $this->version;
+    }
+
+    /**
+     * Sets the application version.
+     */
+    public function setVersion(string $version)
+    {
+        $this->version = $version;
+    }
+
+    /**
+     * Returns the long version of the application.
+     *
+     * @return string
+     */
+    public function getLongVersion()
+    {
+        if ('UNKNOWN' !== $this->getName()) {
+            if ('UNKNOWN' !== $this->getVersion()) {
+                return sprintf('%s <info>%s</info>', $this->getName(), $this->getVersion());
+            }
+
+            return $this->getName();
+        }
+
+        return 'Console Tool';
+    }
+
+    /**
+     * Registers a new command.
+     */
+    public function register(string $name): Command
+    {
+        return $this->add(new Command($name));
+    }
+
+    /**
+     * Adds an array of command objects.
+     *
+     * If a Command is not enabled it will not be added.
+     *
+     * @param Command[] $commands An array of commands
+     */
+    public function addCommands(array $commands)
+    {
+        foreach ($commands as $command) {
+            $this->add($command);
+        }
+    }
+
+    /**
+     * Adds a command object.
+     *
+     * If a command with the same name already exists, it will be overridden.
+     * If the command is not enabled it will not be added.
+     *
+     * @return Command|null
+     */
+    public function add(Command $command)
+    {
+        $this->init();
+
+        $command->setApplication($this);
+
+        if (!$command->isEnabled()) {
+            $command->setApplication(null);
+
+            return null;
+        }
+
+        if (!$command instanceof LazyCommand) {
+            // Will throw if the command is not correctly initialized.
+            $command->getDefinition();
+        }
+
+        if (!$command->getName()) {
+            throw new LogicException(sprintf('The command defined in "%s" cannot have an empty name.', get_debug_type($command)));
+        }
+
+        $this->commands[$command->getName()] = $command;
+
+        foreach ($command->getAliases() as $alias) {
+            $this->commands[$alias] = $command;
+        }
+
+        return $command;
+    }
+
+    /**
+     * Returns a registered command by name or alias.
+     *
+     * @return Command
+     *
+     * @throws CommandNotFoundException When given command name does not exist
+     */
+    public function get(string $name)
+    {
+        $this->init();
+
+        if (!$this->has($name)) {
+            throw new CommandNotFoundException(sprintf('The command "%s" does not exist.', $name));
+        }
+
+        // When the command has a different name than the one used at the command loader level
+        if (!isset($this->commands[$name])) {
+            throw new CommandNotFoundException(sprintf('The "%s" command cannot be found because it is registered under multiple names. Make sure you don\'t set a different name via constructor or "setName()".', $name));
+        }
+
+        $command = $this->commands[$name];
+
+        if ($this->wantHelps) {
+            $this->wantHelps = false;
+
+            $helpCommand = $this->get('help');
+            $helpCommand->setCommand($command);
+
+            return $helpCommand;
+        }
+
+        return $command;
+    }
+
+    /**
+     * Returns true if the command exists, false otherwise.
+     */
+    public function has(string $name): bool
+    {
+        $this->init();
+
+        return isset($this->commands[$name]) || ($this->commandLoader && $this->commandLoader->has($name) && $this->add($this->commandLoader->get($name)));
+    }
+
+    /**
+     * Returns an array of all unique namespaces used by currently registered commands.
+     *
+     * It does not return the global namespace which always exists.
+     *
+     * @return string[]
+     */
+    public function getNamespaces(): array
+    {
+        $namespaces = [];
+        foreach ($this->all() as $command) {
+            if ($command->isHidden()) {
+                continue;
+            }
+
+            $namespaces[] = $this->extractAllNamespaces($command->getName());
+
+            foreach ($command->getAliases() as $alias) {
+                $namespaces[] = $this->extractAllNamespaces($alias);
+            }
+        }
+
+        return array_values(array_unique(array_filter(array_merge([], ...$namespaces))));
+    }
+
+    /**
+     * Finds a registered namespace by a name or an abbreviation.
+     *
+     * @throws NamespaceNotFoundException When namespace is incorrect or ambiguous
+     */
+    public function findNamespace(string $namespace): string
+    {
+        $allNamespaces = $this->getNamespaces();
+        $expr = implode('[^:]*:', array_map('preg_quote', explode(':', $namespace))).'[^:]*';
+        $namespaces = preg_grep('{^'.$expr.'}', $allNamespaces);
+
+        if (empty($namespaces)) {
+            $message = sprintf('There are no commands defined in the "%s" namespace.', $namespace);
+
+            if ($alternatives = $this->findAlternatives($namespace, $allNamespaces)) {
+                if (1 == \count($alternatives)) {
+                    $message .= "\n\nDid you mean this?\n    ";
+                } else {
+                    $message .= "\n\nDid you mean one of these?\n    ";
+                }
+
+                $message .= implode("\n    ", $alternatives);
+            }
+
+            throw new NamespaceNotFoundException($message, $alternatives);
+        }
+
+        $exact = \in_array($namespace, $namespaces, true);
+        if (\count($namespaces) > 1 && !$exact) {
+            throw new NamespaceNotFoundException(sprintf("The namespace \"%s\" is ambiguous.\nDid you mean one of these?\n%s.", $namespace, $this->getAbbreviationSuggestions(array_values($namespaces))), array_values($namespaces));
+        }
+
+        return $exact ? $namespace : reset($namespaces);
+    }
+
+    /**
+     * Finds a command by name or alias.
+     *
+     * Contrary to get, this command tries to find the best
+     * match if you give it an abbreviation of a name or alias.
+     *
+     * @return Command
+     *
+     * @throws CommandNotFoundException When command name is incorrect or ambiguous
+     */
+    public function find(string $name)
+    {
+        $this->init();
+
+        $aliases = [];
+
+        foreach ($this->commands as $command) {
+            foreach ($command->getAliases() as $alias) {
+                if (!$this->has($alias)) {
+                    $this->commands[$alias] = $command;
+                }
+            }
+        }
+
+        if ($this->has($name)) {
+            return $this->get($name);
+        }
+
+        $allCommands = $this->commandLoader ? array_merge($this->commandLoader->getNames(), array_keys($this->commands)) : array_keys($this->commands);
+        $expr = implode('[^:]*:', array_map('preg_quote', explode(':', $name))).'[^:]*';
+        $commands = preg_grep('{^'.$expr.'}', $allCommands);
+
+        if (empty($commands)) {
+            $commands = preg_grep('{^'.$expr.'}i', $allCommands);
+        }
+
+        // if no commands matched or we just matched namespaces
+        if (empty($commands) || \count(preg_grep('{^'.$expr.'$}i', $commands)) < 1) {
+            if (false !== $pos = strrpos($name, ':')) {
+                // check if a namespace exists and contains commands
+                $this->findNamespace(substr($name, 0, $pos));
+            }
+
+            $message = sprintf('Command "%s" is not defined.', $name);
+
+            if ($alternatives = $this->findAlternatives($name, $allCommands)) {
+                // remove hidden commands
+                $alternatives = array_filter($alternatives, function ($name) {
+                    return !$this->get($name)->isHidden();
+                });
+
+                if (1 == \count($alternatives)) {
+                    $message .= "\n\nDid you mean this?\n    ";
+                } else {
+                    $message .= "\n\nDid you mean one of these?\n    ";
+                }
+                $message .= implode("\n    ", $alternatives);
+            }
+
+            throw new CommandNotFoundException($message, array_values($alternatives));
+        }
+
+        // filter out aliases for commands which are already on the list
+        if (\count($commands) > 1) {
+            $commandList = $this->commandLoader ? array_merge(array_flip($this->commandLoader->getNames()), $this->commands) : $this->commands;
+            $commands = array_unique(array_filter($commands, function ($nameOrAlias) use (&$commandList, $commands, &$aliases) {
+                if (!$commandList[$nameOrAlias] instanceof Command) {
+                    $commandList[$nameOrAlias] = $this->commandLoader->get($nameOrAlias);
+                }
+
+                $commandName = $commandList[$nameOrAlias]->getName();
+
+                $aliases[$nameOrAlias] = $commandName;
+
+                return $commandName === $nameOrAlias || !\in_array($commandName, $commands);
+            }));
+        }
+
+        if (\count($commands) > 1) {
+            $usableWidth = $this->terminal->getWidth() - 10;
+            $abbrevs = array_values($commands);
+            $maxLen = 0;
+            foreach ($abbrevs as $abbrev) {
+                $maxLen = max(Helper::width($abbrev), $maxLen);
+            }
+            $abbrevs = array_map(function ($cmd) use ($commandList, $usableWidth, $maxLen, &$commands) {
+                if ($commandList[$cmd]->isHidden()) {
+                    unset($commands[array_search($cmd, $commands)]);
+
+                    return false;
+                }
+
+                $abbrev = str_pad($cmd, $maxLen, ' ').' '.$commandList[$cmd]->getDescription();
+
+                return Helper::width($abbrev) > $usableWidth ? Helper::substr($abbrev, 0, $usableWidth - 3).'...' : $abbrev;
+            }, array_values($commands));
+
+            if (\count($commands) > 1) {
+                $suggestions = $this->getAbbreviationSuggestions(array_filter($abbrevs));
+
+                throw new CommandNotFoundException(sprintf("Command \"%s\" is ambiguous.\nDid you mean one of these?\n%s.", $name, $suggestions), array_values($commands));
+            }
+        }
+
+        $command = $this->get(reset($commands));
+
+        if ($command->isHidden()) {
+            throw new CommandNotFoundException(sprintf('The command "%s" does not exist.', $name));
+        }
+
+        return $command;
+    }
+
+    /**
+     * Gets the commands (registered in the given namespace if provided).
+     *
+     * The array keys are the full names and the values the command instances.
+     *
+     * @return Command[]
+     */
+    public function all(string $namespace = null)
+    {
+        $this->init();
+
+        if (null === $namespace) {
+            if (!$this->commandLoader) {
+                return $this->commands;
+            }
+
+            $commands = $this->commands;
+            foreach ($this->commandLoader->getNames() as $name) {
+                if (!isset($commands[$name]) && $this->has($name)) {
+                    $commands[$name] = $this->get($name);
+                }
+            }
+
+            return $commands;
+        }
+
+        $commands = [];
+        foreach ($this->commands as $name => $command) {
+            if ($namespace === $this->extractNamespace($name, substr_count($namespace, ':') + 1)) {
+                $commands[$name] = $command;
+            }
+        }
+
+        if ($this->commandLoader) {
+            foreach ($this->commandLoader->getNames() as $name) {
+                if (!isset($commands[$name]) && $namespace === $this->extractNamespace($name, substr_count($namespace, ':') + 1) && $this->has($name)) {
+                    $commands[$name] = $this->get($name);
+                }
+            }
+        }
+
+        return $commands;
+    }
+
+    /**
+     * Returns an array of possible abbreviations given a set of names.
+     *
+     * @return string[][]
+     */
+    public static function getAbbreviations(array $names): array
+    {
+        $abbrevs = [];
+        foreach ($names as $name) {
+            for ($len = \strlen($name); $len > 0; --$len) {
+                $abbrev = substr($name, 0, $len);
+                $abbrevs[$abbrev][] = $name;
+            }
+        }
+
+        return $abbrevs;
+    }
+
+    public function renderThrowable(\Throwable $e, OutputInterface $output): void
+    {
+        $output->writeln('', OutputInterface::VERBOSITY_QUIET);
+
+        $this->doRenderThrowable($e, $output);
+
+        if (null !== $this->runningCommand) {
+            $output->writeln(sprintf('<info>%s</info>', OutputFormatter::escape(sprintf($this->runningCommand->getSynopsis(), $this->getName()))), OutputInterface::VERBOSITY_QUIET);
+            $output->writeln('', OutputInterface::VERBOSITY_QUIET);
+        }
+    }
+
+    protected function doRenderThrowable(\Throwable $e, OutputInterface $output): void
+    {
+        do {
+            $message = trim($e->getMessage());
+            if ('' === $message || OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
+                $class = get_debug_type($e);
+                $title = sprintf('  [%s%s]  ', $class, 0 !== ($code = $e->getCode()) ? ' ('.$code.')' : '');
+                $len = Helper::width($title);
+            } else {
+                $len = 0;
+            }
+
+            if (str_contains($message, "@anonymous\0")) {
+                $message = preg_replace_callback('/[a-zA-Z_\x7f-\xff][\\\\a-zA-Z0-9_\x7f-\xff]*+@anonymous\x00.*?\.php(?:0x?|:[0-9]++\$)[0-9a-fA-F]++/', function ($m) {
+                    return class_exists($m[0], false) ? (get_parent_class($m[0]) ?: key(class_implements($m[0])) ?: 'class').'@anonymous' : $m[0];
+                }, $message);
+            }
+
+            $width = $this->terminal->getWidth() ? $this->terminal->getWidth() - 1 : \PHP_INT_MAX;
+            $lines = [];
+            foreach ('' !== $message ? preg_split('/\r?\n/', $message) : [] as $line) {
+                foreach ($this->splitStringByWidth($line, $width - 4) as $line) {
+                    // pre-format lines to get the right string length
+                    $lineLength = Helper::width($line) + 4;
+                    $lines[] = [$line, $lineLength];
+
+                    $len = max($lineLength, $len);
+                }
+            }
+
+            $messages = [];
+            if (!$e instanceof ExceptionInterface || OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
+                $messages[] = sprintf('<comment>%s</comment>', OutputFormatter::escape(sprintf('In %s line %s:', basename($e->getFile()) ?: 'n/a', $e->getLine() ?: 'n/a')));
+            }
+            $messages[] = $emptyLine = sprintf('<error>%s</error>', str_repeat(' ', $len));
+            if ('' === $message || OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
+                $messages[] = sprintf('<error>%s%s</error>', $title, str_repeat(' ', max(0, $len - Helper::width($title))));
+            }
+            foreach ($lines as $line) {
+                $messages[] = sprintf('<error>  %s  %s</error>', OutputFormatter::escape($line[0]), str_repeat(' ', $len - $line[1]));
+            }
+            $messages[] = $emptyLine;
+            $messages[] = '';
+
+            $output->writeln($messages, OutputInterface::VERBOSITY_QUIET);
+
+            if (OutputInterface::VERBOSITY_VERBOSE <= $output->getVerbosity()) {
+                $output->writeln('<comment>Exception trace:</comment>', OutputInterface::VERBOSITY_QUIET);
+
+                // exception related properties
+                $trace = $e->getTrace();
+
+                array_unshift($trace, [
+                    'function' => '',
+                    'file' => $e->getFile() ?: 'n/a',
+                    'line' => $e->getLine() ?: 'n/a',
+                    'args' => [],
+                ]);
+
+                for ($i = 0, $count = \count($trace); $i < $count; ++$i) {
+                    $class = $trace[$i]['class'] ?? '';
+                    $type = $trace[$i]['type'] ?? '';
+                    $function = $trace[$i]['function'] ?? '';
+                    $file = $trace[$i]['file'] ?? 'n/a';
+                    $line = $trace[$i]['line'] ?? 'n/a';
+
+                    $output->writeln(sprintf(' %s%s at <info>%s:%s</info>', $class, $function ? $type.$function.'()' : '', $file, $line), OutputInterface::VERBOSITY_QUIET);
+                }
+
+                $output->writeln('', OutputInterface::VERBOSITY_QUIET);
+            }
+        } while ($e = $e->getPrevious());
+    }
+
+    /**
+     * Configures the input and output instances based on the user arguments and options.
+     */
+    protected function configureIO(InputInterface $input, OutputInterface $output)
+    {
+        if (true === $input->hasParameterOption(['--ansi'], true)) {
+            $output->setDecorated(true);
+        } elseif (true === $input->hasParameterOption(['--no-ansi'], true)) {
+            $output->setDecorated(false);
+        }
+
+        if (true === $input->hasParameterOption(['--no-interaction', '-n'], true)) {
+            $input->setInteractive(false);
+        }
+
+        switch ($shellVerbosity = (int) getenv('SHELL_VERBOSITY')) {
+            case -1:
+                $output->setVerbosity(OutputInterface::VERBOSITY_QUIET);
+                break;
+            case 1:
+                $output->setVerbosity(OutputInterface::VERBOSITY_VERBOSE);
+                break;
+            case 2:
+                $output->setVerbosity(OutputInterface::VERBOSITY_VERY_VERBOSE);
+                break;
+            case 3:
+                $output->setVerbosity(OutputInterface::VERBOSITY_DEBUG);
+                break;
+            default:
+                $shellVerbosity = 0;
+                break;
+        }
+
+        if (true === $input->hasParameterOption(['--quiet', '-q'], true)) {
+            $output->setVerbosity(OutputInterface::VERBOSITY_QUIET);
+            $shellVerbosity = -1;
+        } else {
+            if ($input->hasParameterOption('-vvv', true) || $input->hasParameterOption('--verbose=3', true) || 3 === $input->getParameterOption('--verbose', false, true)) {
+                $output->setVerbosity(OutputInterface::VERBOSITY_DEBUG);
+                $shellVerbosity = 3;
+            } elseif ($input->hasParameterOption('-vv', true) || $input->hasParameterOption('--verbose=2', true) || 2 === $input->getParameterOption('--verbose', false, true)) {
+                $output->setVerbosity(OutputInterface::VERBOSITY_VERY_VERBOSE);
+                $shellVerbosity = 2;
+            } elseif ($input->hasParameterOption('-v', true) || $input->hasParameterOption('--verbose=1', true) || $input->hasParameterOption('--verbose', true) || $input->getParameterOption('--verbose', false, true)) {
+                $output->setVerbosity(OutputInterface::VERBOSITY_VERBOSE);
+                $shellVerbosity = 1;
+            }
+        }
+
+        if (-1 === $shellVerbosity) {
+            $input->setInteractive(false);
+        }
+
+        if (\function_exists('putenv')) {
+            @putenv('SHELL_VERBOSITY='.$shellVerbosity);
+        }
+        $_ENV['SHELL_VERBOSITY'] = $shellVerbosity;
+        $_SERVER['SHELL_VERBOSITY'] = $shellVerbosity;
+    }
+
+    /**
+     * Runs the current command.
+     *
+     * If an event dispatcher has been attached to the application,
+     * events are also dispatched during the life-cycle of the command.
+     *
+     * @return int 0 if everything went fine, or an error code
+     */
+    protected function doRunCommand(Command $command, InputInterface $input, OutputInterface $output)
+    {
+        foreach ($command->getHelperSet() as $helper) {
+            if ($helper instanceof InputAwareInterface) {
+                $helper->setInput($input);
+            }
+        }
+
+        if ($this->signalsToDispatchEvent) {
+            $commandSignals = $command instanceof SignalableCommandInterface ? $command->getSubscribedSignals() : [];
+
+            if ($commandSignals || null !== $this->dispatcher) {
+                if (!$this->signalRegistry) {
+                    throw new RuntimeException('Unable to subscribe to signal events. Make sure that the `pcntl` extension is installed and that "pcntl_*" functions are not disabled by your php.ini\'s "disable_functions" directive.');
+                }
+
+                if (Terminal::hasSttyAvailable()) {
+                    $sttyMode = shell_exec('stty -g');
+
+                    foreach ([\SIGINT, \SIGTERM] as $signal) {
+                        $this->signalRegistry->register($signal, static function () use ($sttyMode) {
+                            shell_exec('stty '.$sttyMode);
+                        });
+                    }
+                }
+            }
+
+            if (null !== $this->dispatcher) {
+                foreach ($this->signalsToDispatchEvent as $signal) {
+                    $event = new ConsoleSignalEvent($command, $input, $output, $signal);
+
+                    $this->signalRegistry->register($signal, function ($signal, $hasNext) use ($event) {
+                        $this->dispatcher->dispatch($event, ConsoleEvents::SIGNAL);
+
+                        // No more handlers, we try to simulate PHP default behavior
+                        if (!$hasNext) {
+                            if (!\in_array($signal, [\SIGUSR1, \SIGUSR2], true)) {
+                                exit(0);
+                            }
+                        }
+                    });
+                }
+            }
+
+            foreach ($commandSignals as $signal) {
+                $this->signalRegistry->register($signal, [$command, 'handleSignal']);
+            }
+        }
+
+        if (null === $this->dispatcher) {
+            return $command->run($input, $output);
+        }
+
+        // bind before the console.command event, so the listeners have access to input options/arguments
+        try {
+            $command->mergeApplicationDefinition();
+            $input->bind($command->getDefinition());
+        } catch (ExceptionInterface $e) {
+            // ignore invalid options/arguments for now, to allow the event listeners to customize the InputDefinition
+        }
+
+        $event = new ConsoleCommandEvent($command, $input, $output);
+        $e = null;
+
+        try {
+            $this->dispatcher->dispatch($event, ConsoleEvents::COMMAND);
+
+            if ($event->commandShouldRun()) {
+                $exitCode = $command->run($input, $output);
+            } else {
+                $exitCode = ConsoleCommandEvent::RETURN_CODE_DISABLED;
+            }
+        } catch (\Throwable $e) {
+            $event = new ConsoleErrorEvent($input, $output, $e, $command);
+            $this->dispatcher->dispatch($event, ConsoleEvents::ERROR);
+            $e = $event->getError();
+
+            if (0 === $exitCode = $event->getExitCode()) {
+                $e = null;
+            }
+        }
+
+        $event = new ConsoleTerminateEvent($command, $input, $output, $exitCode);
+        $this->dispatcher->dispatch($event, ConsoleEvents::TERMINATE);
+
+        if (null !== $e) {
+            throw $e;
+        }
+
+        return $event->getExitCode();
+    }
+
+    /**
+     * Gets the name of the command based on input.
+     */
+    protected function getCommandName(InputInterface $input): ?string
+    {
+        return $this->singleCommand ? $this->defaultCommand : $input->getFirstArgument();
+    }
+
+    /**
+     * Gets the default input definition.
+     */
+    protected function getDefaultInputDefinition(): InputDefinition
+    {
+        return new InputDefinition([
+            new InputArgument('command', InputArgument::REQUIRED, 'The command to execute'),
+            new InputOption('--help', '-h', InputOption::VALUE_NONE, 'Display help for the given command. When no command is given display help for the <info>'.$this->defaultCommand.'</info> command'),
+            new InputOption('--quiet', '-q', InputOption::VALUE_NONE, 'Do not output any message'),
+            new InputOption('--verbose', '-v|vv|vvv', InputOption::VALUE_NONE, 'Increase the verbosity of messages: 1 for normal output, 2 for more verbose output and 3 for debug'),
+            new InputOption('--version', '-V', InputOption::VALUE_NONE, 'Display this application version'),
+            new InputOption('--ansi', '', InputOption::VALUE_NEGATABLE, 'Force (or disable --no-ansi) ANSI output', null),
+            new InputOption('--no-interaction', '-n', InputOption::VALUE_NONE, 'Do not ask any interactive question'),
+        ]);
+    }
+
+    /**
+     * Gets the default commands that should always be available.
+     *
+     * @return Command[]
+     */
+    protected function getDefaultCommands(): array
+    {
+        return [new HelpCommand(), new ListCommand(), new CompleteCommand(), new DumpCompletionCommand()];
+    }
+
+    /**
+     * Gets the default helper set with the helpers that should always be available.
+     */
+    protected function getDefaultHelperSet(): HelperSet
+    {
+        return new HelperSet([
+            new FormatterHelper(),
+            new DebugFormatterHelper(),
+            new ProcessHelper(),
+            new QuestionHelper(),
+        ]);
+    }
+
+    /**
+     * Returns abbreviated suggestions in string format.
+     */
+    private function getAbbreviationSuggestions(array $abbrevs): string
+    {
+        return '    '.implode("\n    ", $abbrevs);
+    }
+
+    /**
+     * Returns the namespace part of the command name.
+     *
+     * This method is not part of public API and should not be used directly.
+     */
+    public function extractNamespace(string $name, int $limit = null): string
+    {
+        $parts = explode(':', $name, -1);
+
+        return implode(':', null === $limit ? $parts : \array_slice($parts, 0, $limit));
+    }
+
+    /**
+     * Finds alternative of $name among $collection,
+     * if nothing is found in $collection, try in $abbrevs.
+     *
+     * @return string[]
+     */
+    private function findAlternatives(string $name, iterable $collection): array
+    {
+        $threshold = 1e3;
+        $alternatives = [];
+
+        $collectionParts = [];
+        foreach ($collection as $item) {
+            $collectionParts[$item] = explode(':', $item);
+        }
+
+        foreach (explode(':', $name) as $i => $subname) {
+            foreach ($collectionParts as $collectionName => $parts) {
+                $exists = isset($alternatives[$collectionName]);
+                if (!isset($parts[$i]) && $exists) {
+                    $alternatives[$collectionName] += $threshold;
+                    continue;
+                } elseif (!isset($parts[$i])) {
+                    continue;
+                }
+
+                $lev = levenshtein($subname, $parts[$i]);
+                if ($lev <= \strlen($subname) / 3 || '' !== $subname && str_contains($parts[$i], $subname)) {
+                    $alternatives[$collectionName] = $exists ? $alternatives[$collectionName] + $lev : $lev;
+                } elseif ($exists) {
+                    $alternatives[$collectionName] += $threshold;
+                }
+            }
+        }
+
+        foreach ($collection as $item) {
+            $lev = levenshtein($name, $item);
+            if ($lev <= \strlen($name) / 3 || str_contains($item, $name)) {
+                $alternatives[$item] = isset($alternatives[$item]) ? $alternatives[$item] - $lev : $lev;
+            }
+        }
+
+        $alternatives = array_filter($alternatives, function ($lev) use ($threshold) { return $lev < 2 * $threshold; });
+        ksort($alternatives, \SORT_NATURAL | \SORT_FLAG_CASE);
+
+        return array_keys($alternatives);
+    }
+
+    /**
+     * Sets the default Command name.
+     *
+     * @return $this
+     */
+    public function setDefaultCommand(string $commandName, bool $isSingleCommand = false): static
+    {
+        $this->defaultCommand = explode('|', ltrim($commandName, '|'))[0];
+
+        if ($isSingleCommand) {
+            // Ensure the command exist
+            $this->find($commandName);
+
+            $this->singleCommand = true;
+        }
+
+        return $this;
+    }
+
+    /**
+     * @internal
+     */
+    public function isSingleCommand(): bool
+    {
+        return $this->singleCommand;
+    }
+
+    private function splitStringByWidth(string $string, int $width): array
+    {
+        // str_split is not suitable for multi-byte characters, we should use preg_split to get char array properly.
+        // additionally, array_slice() is not enough as some character has doubled width.
+        // we need a function to split string not by character count but by string width
+        if (false === $encoding = mb_detect_encoding($string, null, true)) {
+            return str_split($string, $width);
+        }
+
+        $utf8String = mb_convert_encoding($string, 'utf8', $encoding);
+        $lines = [];
+        $line = '';
+
+        $offset = 0;
+        while (preg_match('/.{1,10000}/u', $utf8String, $m, 0, $offset)) {
+            $offset += \strlen($m[0]);
+
+            foreach (preg_split('//u', $m[0]) as $char) {
+                // test if $char could be appended to current line
+                if (mb_strwidth($line.$char, 'utf8') <= $width) {
+                    $line .= $char;
+                    continue;
+                }
+                // if not, push current line to array and make new line
+                $lines[] = str_pad($line, $width);
+                $line = $char;
+            }
+        }
+
+        $lines[] = \count($lines) ? str_pad($line, $width) : $line;
+
+        mb_convert_variables($encoding, 'utf8', $lines);
+
+        return $lines;
+    }
+
+    /**
+     * Returns all namespaces of the command name.
+     *
+     * @return string[]
+     */
+    private function extractAllNamespaces(string $name): array
+    {
+        // -1 as third argument is needed to skip the command short name when exploding
+        $parts = explode(':', $name, -1);
+        $namespaces = [];
+
+        foreach ($parts as $part) {
+            if (\count($namespaces)) {
+                $namespaces[] = end($namespaces).':'.$part;
+            } else {
+                $namespaces[] = $part;
+            }
+        }
+
+        return $namespaces;
+    }
+
+    private function init()
+    {
+        if ($this->initialized) {
+            return;
+        }
+        $this->initialized = true;
+
+        foreach ($this->getDefaultCommands() as $command) {
+            $this->add($command);
+        }
     }
 }
