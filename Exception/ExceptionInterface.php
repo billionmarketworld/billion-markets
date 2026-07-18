@@ -12,8 +12,10 @@
 namespace Symfony\Component\Console\Exception;
 
 /**
+ * ExceptionInterface.
+ *
  * @author Jérôme Tamarelle <jerome@tamarelle.net>
  */
-class InvalidArgumentException extends \InvalidArgumentException implements ExceptionInterface
+interface ExceptionInterface extends \Throwable
 {
 }

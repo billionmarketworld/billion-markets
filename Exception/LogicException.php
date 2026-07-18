@@ -1,18 +1,19 @@
 <?php
 
-declare(strict_types=1);
-
 /*
- * This file is part of the league/commonmark package.
+ * This file is part of the Symfony package.
  *
- * (c) Colin O'Dell <colinodell@gmail.com>
+ * (c) Fabien Potencier <fabien@symfony.com>
  *
  * For the full copyright and license information, please view the LICENSE
  * file that was distributed with this source code.
  */
 
-namespace League\CommonMark\Exception;
+namespace Symfony\Component\Console\Exception;
 
-class LogicException extends \LogicException implements CommonMarkException
+/**
+ * @author Jérôme Tamarelle <jerome@tamarelle.net>
+ */
+class LogicException extends \LogicException implements ExceptionInterface
 {
 }

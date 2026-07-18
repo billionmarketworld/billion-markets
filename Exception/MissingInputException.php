@@ -12,8 +12,10 @@
 namespace Symfony\Component\Console\Exception;
 
 /**
- * @author Jérôme Tamarelle <jerome@tamarelle.net>
+ * Represents failure to read input from stdin.
+ *
+ * @author Gabriel Ostrolucký <gabriel.ostrolucky@gmail.com>
  */
-class InvalidArgumentException extends \InvalidArgumentException implements ExceptionInterface
+class MissingInputException extends RuntimeException implements ExceptionInterface
 {
 }

@@ -12,8 +12,10 @@
 namespace Symfony\Component\Console\Exception;
 
 /**
- * @author Jérôme Tamarelle <jerome@tamarelle.net>
+ * Represents an incorrect namespace typed in the console.
+ *
+ * @author Pierre du Plessis <pdples@gmail.com>
  */
-class InvalidArgumentException extends \InvalidArgumentException implements ExceptionInterface
+class NamespaceNotFoundException extends CommandNotFoundException
 {
 }
