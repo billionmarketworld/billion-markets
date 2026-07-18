@@ -1,30 +1,38 @@
-<p align="center"><img src="/art/logo.svg" alt="Logo Laravel Breeze"></p>
+<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400"></a></p>
 
 <p align="center">
-    <a href="https://packagist.org/packages/laravel/breeze">
-        <img src="https://img.shields.io/packagist/dt/laravel/breeze" alt="Total Downloads">
-    </a>
-    <a href="https://packagist.org/packages/laravel/breeze">
-        <img src="https://img.shields.io/packagist/v/laravel/breeze" alt="Latest Stable Version">
-    </a>
-    <a href="https://packagist.org/packages/laravel/breeze">
-        <img src="https://img.shields.io/packagist/l/laravel/breeze" alt="License">
-    </a>
+<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
+<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
 </p>
 
-## Introduction
+## About Laravel
 
-Breeze provides a minimal and simple starting point for building a Laravel application with authentication. Styled with Tailwind, Breeze publishes authentication controllers and views to your application that can be easily customized based on your own application's needs.
+> **Note:** This repository contains the core code of the Laravel framework. If you want to build an application using Laravel, visit the main [Laravel repository](https://github.com/laravel/laravel).
 
-Laravel Breeze is powered by Blade and Tailwind. If you're looking for a more robust Laravel starter kit that includes two factor authentication, Livewire / Inertia support, and more, check out [Laravel Jetstream](https://jetstream.laravel.com).
+Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable, creative experience to be truly fulfilling. Laravel attempts to take the pain out of development by easing common tasks used in the majority of web projects, such as:
 
-## Official Documentation
+- [Simple, fast routing engine](https://laravel.com/docs/routing).
+- [Powerful dependency injection container](https://laravel.com/docs/container).
+- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
+- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
+- [Robust background job processing](https://laravel.com/docs/queues).
+- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
 
-Documentation for Breeze can be found on the [Laravel website](https://laravel.com/docs/starter-kits#laravel-breeze).
+Laravel is accessible, yet powerful, providing tools needed for large, robust applications. A superb combination of simplicity, elegance, and innovation gives you a complete toolset required to build any application with which you are tasked.
+
+## Learning Laravel
+
+Laravel has the most extensive and thorough documentation and video tutorial library of any modern web application framework. The [Laravel documentation](https://laravel.com/docs) is in-depth and complete, making it a breeze to get started learning the framework.
+
+You may also try the [Laravel Bootcamp](https://bootcamp.laravel.com), where you will be guided through building a modern Laravel application from scratch.
+
+If you're not in the mood to read, [Laracasts](https://laracasts.com) contains over 1100 video tutorials covering a range of topics including Laravel, modern PHP, unit testing, JavaScript, and more. Boost the skill level of yourself and your entire team by digging into our comprehensive video library.
 
 ## Contributing
 
-Thank you for considering contributing to Breeze! You can read the contribution guide [here](.github/CONTRIBUTING.md).
+Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
 
 ## Code of Conduct
 
@@ -32,8 +40,8 @@ In order to ensure that the Laravel community is welcoming to all, please review
 
 ## Security Vulnerabilities
 
-Please review [our security policy](https://github.com/laravel/breeze/security/policy) on how to report security vulnerabilities.
+Please review [our security policy](https://github.com/laravel/framework/security/policy) on how to report security vulnerabilities.
 
 ## License
 
-Laravel Breeze is open-sourced software licensed under the [MIT license](LICENSE.md).
+The Laravel framework is open-sourced software licensed under the [MIT license](LICENSE.md).
