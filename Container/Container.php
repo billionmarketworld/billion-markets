@@ -1,139 +1,210 @@
 <?php
 
-declare(strict_types=1);
+namespace Illuminate\Contracts\Container;
 
-namespace Faker\Container;
+use Closure;
+use Psr\Container\ContainerInterface;
 
-use Faker\Extension\Extension;
-
-/**
- * A simple implementation of a container.
- *
- * @experimental This class is experimental and does not fall under our BC promise
- */
-final class Container implements ContainerInterface
+interface Container extends ContainerInterface
 {
     /**
-     * @var array<string, callable|object|string>
+     * Determine if the given abstract type has been bound.
+     *
+     * @param  string  $abstract
+     * @return bool
      */
-    private array $definitions;
-
-    private array $services = [];
+    public function bound($abstract);
 
     /**
-     * Create a container object with a set of definitions. The array value MUST
-     * produce an object that implements Extension.
+     * Alias a type to a different name.
      *
-     * @param array<string, callable|object|string> $definitions
+     * @param  string  $abstract
+     * @param  string  $alias
+     * @return void
+     *
+     * @throws \LogicException
      */
-    public function __construct(array $definitions)
-    {
-        $this->definitions = $definitions;
-    }
+    public function alias($abstract, $alias);
 
     /**
-     * Retrieve a definition from the container.
+     * Assign a set of tags to a given binding.
      *
-     * @param string $id
-     *
-     * @throws \InvalidArgumentException
-     * @throws \RuntimeException
-     * @throws ContainerException
-     * @throws NotInContainerException
+     * @param  array|string  $abstracts
+     * @param  array|mixed  ...$tags
+     * @return void
      */
-    public function get($id): Extension
-    {
-        if (!is_string($id)) {
-            throw new \InvalidArgumentException(sprintf(
-                'First argument of %s::get() must be string',
-                self::class,
-            ));
-        }
-
-        if (array_key_exists($id, $this->services)) {
-            return $this->services[$id];
-        }
-
-        if (!$this->has($id)) {
-            throw new NotInContainerException(sprintf(
-                'There is not service with id "%s" in the container.',
-                $id,
-            ));
-        }
-
-        $definition = $this->definitions[$id];
-
-        $service = $this->getService($id, $definition);
-
-        if (!$service instanceof Extension) {
-            throw new \RuntimeException(sprintf(
-                'Service resolved for identifier "%s" does not implement the %s" interface.',
-                $id,
-                Extension::class,
-            ));
-        }
-
-        $this->services[$id] = $service;
-
-        return $service;
-    }
+    public function tag($abstracts, $tags);
 
     /**
-     * Get the service from a definition.
+     * Resolve all of the bindings for a given tag.
      *
-     * @param callable|object|string $definition
+     * @param  string  $tag
+     * @return iterable
      */
-    private function getService(string $id, $definition)
-    {
-        if (is_callable($definition)) {
-            try {
-                return $definition();
-            } catch (\Throwable $e) {
-                throw new ContainerException(
-                    sprintf('Error while invoking callable for "%s"', $id),
-                    0,
-                    $e,
-                );
-            }
-        } elseif (is_object($definition)) {
-            return $definition;
-        } elseif (is_string($definition)) {
-            if (class_exists($definition)) {
-                try {
-                    return new $definition();
-                } catch (\Throwable $e) {
-                    throw new ContainerException(sprintf('Could not instantiate class "%s"', $id), 0, $e);
-                }
-            }
-
-            throw new ContainerException(sprintf(
-                'Could not instantiate class "%s". Class was not found.',
-                $id,
-            ));
-        } else {
-            throw new ContainerException(sprintf(
-                'Invalid type for definition with id "%s"',
-                $id,
-            ));
-        }
-    }
+    public function tagged($tag);
 
     /**
-     * Check if the container contains a given identifier.
+     * Register a binding with the container.
      *
-     * @param string $id
+     * @param  string  $abstract
+     * @param  \Closure|string|null  $concrete
+     * @param  bool  $shared
+     * @return void
+     */
+    public function bind($abstract, $concrete = null, $shared = false);
+
+    /**
+     * Register a binding if it hasn't already been registered.
+     *
+     * @param  string  $abstract
+     * @param  \Closure|string|null  $concrete
+     * @param  bool  $shared
+     * @return void
+     */
+    public function bindIf($abstract, $concrete = null, $shared = false);
+
+    /**
+     * Register a shared binding in the container.
+     *
+     * @param  string  $abstract
+     * @param  \Closure|string|null  $concrete
+     * @return void
+     */
+    public function singleton($abstract, $concrete = null);
+
+    /**
+     * Register a shared binding if it hasn't already been registered.
+     *
+     * @param  string  $abstract
+     * @param  \Closure|string|null  $concrete
+     * @return void
+     */
+    public function singletonIf($abstract, $concrete = null);
+
+    /**
+     * Register a scoped binding in the container.
+     *
+     * @param  string  $abstract
+     * @param  \Closure|string|null  $concrete
+     * @return void
+     */
+    public function scoped($abstract, $concrete = null);
+
+    /**
+     * Register a scoped binding if it hasn't already been registered.
+     *
+     * @param  string  $abstract
+     * @param  \Closure|string|null  $concrete
+     * @return void
+     */
+    public function scopedIf($abstract, $concrete = null);
+
+    /**
+     * "Extend" an abstract type in the container.
+     *
+     * @param  string  $abstract
+     * @param  \Closure  $closure
+     * @return void
      *
      * @throws \InvalidArgumentException
      */
-    public function has($id): bool
-    {
-        if (!is_string($id)) {
-            throw new \InvalidArgumentException(sprintf(
-                'First argument of %s::get() must be string',
-                self::class,
-            ));
-        }
+    public function extend($abstract, Closure $closure);
 
-        return array_key_exists($id, $this->definitions);
-    }
+    /**
+     * Register an existing instance as shared in the container.
+     *
+     * @param  string  $abstract
+     * @param  mixed  $instance
+     * @return mixed
+     */
+    public function instance($abstract, $instance);
+
+    /**
+     * Add a contextual binding to the container.
+     *
+     * @param  string  $concrete
+     * @param  string  $abstract
+     * @param  \Closure|string  $implementation
+     * @return void
+     */
+    public function addContextualBinding($concrete, $abstract, $implementation);
+
+    /**
+     * Define a contextual binding.
+     *
+     * @param  string|array  $concrete
+     * @return \Illuminate\Contracts\Container\ContextualBindingBuilder
+     */
+    public function when($concrete);
+
+    /**
+     * Get a closure to resolve the given type from the container.
+     *
+     * @param  string  $abstract
+     * @return \Closure
+     */
+    public function factory($abstract);
+
+    /**
+     * Flush the container of all bindings and resolved instances.
+     *
+     * @return void
+     */
+    public function flush();
+
+    /**
+     * Resolve the given type from the container.
+     *
+     * @param  string  $abstract
+     * @param  array  $parameters
+     * @return mixed
+     *
+     * @throws \Illuminate\Contracts\Container\BindingResolutionException
+     */
+    public function make($abstract, array $parameters = []);
+
+    /**
+     * Call the given Closure / class@method and inject its dependencies.
+     *
+     * @param  callable|string  $callback
+     * @param  array  $parameters
+     * @param  string|null  $defaultMethod
+     * @return mixed
+     */
+    public function call($callback, array $parameters = [], $defaultMethod = null);
+
+    /**
+     * Determine if the given abstract type has been resolved.
+     *
+     * @param  string  $abstract
+     * @return bool
+     */
+    public function resolved($abstract);
+
+    /**
+     * Register a new before resolving callback.
+     *
+     * @param  \Closure|string  $abstract
+     * @param  \Closure|null  $callback
+     * @return void
+     */
+    public function beforeResolving($abstract, ?Closure $callback = null);
+
+    /**
+     * Register a new resolving callback.
+     *
+     * @param  \Closure|string  $abstract
+     * @param  \Closure|null  $callback
+     * @return void
+     */
+    public function resolving($abstract, ?Closure $callback = null);
+
+    /**
+     * Register a new after resolving callback.
+     *
+     * @param  \Closure|string  $abstract
+     * @param  \Closure|null  $callback
+     * @return void
+     */
+    public function afterResolving($abstract, ?Closure $callback = null);
 }
