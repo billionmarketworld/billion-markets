@@ -1,48 +1,36 @@
-# phpunit/php-code-coverage
+# PsySH
 
-[![Latest Stable Version](https://poser.pugx.org/phpunit/php-code-coverage/v/stable.png)](https://packagist.org/packages/phpunit/php-code-coverage)
-[![CI Status](https://github.com/sebastianbergmann/php-code-coverage/workflows/CI/badge.svg)](https://github.com/sebastianbergmann/php-code-coverage/actions)
-[![Type Coverage](https://shepherd.dev/github/sebastianbergmann/php-code-coverage/coverage.svg)](https://shepherd.dev/github/sebastianbergmann/php-code-coverage)
-
-Provides collection, processing, and rendering functionality for PHP code coverage information.
-
-## Installation
-
-You can add this library as a local, per-project dependency to your project using [Composer](https://getcomposer.org/):
-
-```
-composer require phpunit/php-code-coverage
-```
-
-If you only need this library during development, for instance to run your project's test suite, then you should add it as a development-time dependency:
-
-```
-composer require --dev phpunit/php-code-coverage
-```
-
-## Usage
-
-```php
-<?php declare(strict_types=1);
-use SebastianBergmann\CodeCoverage\Filter;
-use SebastianBergmann\CodeCoverage\Driver\Selector;
-use SebastianBergmann\CodeCoverage\CodeCoverage;
-use SebastianBergmann\CodeCoverage\Report\Html\Facade as HtmlReport;
-
-$filter = new Filter;
-$filter->includeDirectory('/path/to/directory');
-
-$coverage = new CodeCoverage(
-    (new Selector)->forLineCoverage($filter),
-    $filter
-);
-
-$coverage->start('<name of test>');
-
-// ...
-
-$coverage->stop();
+PsySH is a runtime developer console, interactive debugger and [REPL](https://en.wikipedia.org/wiki/Read%E2%80%93eval%E2%80%93print_loop) for PHP. Learn more at [psysh.org](http://psysh.org/) and [in the manual](https://github.com/bobthecow/psysh/wiki/Home).
 
 
-(new HtmlReport)->process($coverage, '/tmp/code-coverage-report');
-```
+[![Package version](https://img.shields.io/packagist/v/psy/psysh.svg?style=flat-square)](https://packagist.org/packages/psy/psysh)
+[![Monthly downloads](http://img.shields.io/packagist/dm/psy/psysh.svg?style=flat-square)](https://packagist.org/packages/psy/psysh)
+[![Made out of awesome](https://img.shields.io/badge/made_out_of_awesome-✓-brightgreen.svg?style=flat-square)](http://psysh.org)
+
+[![Build status](https://img.shields.io/github/actions/workflow/status/bobthecow/psysh/tests.yml?branch=main&style=flat-square)](https://github.com/bobthecow/psysh/actions?query=branch:main)
+[![StyleCI](https://styleci.io/repos/4549925/shield)](https://styleci.io/repos/4549925)
+
+
+<a id="downloading-the-manual"></a>
+
+## [PsySH manual](https://github.com/bobthecow/psysh/wiki/Home)
+
+### [💾 Installation](https://github.com/bobthecow/psysh/wiki/Installation)
+ * [📕 PHP manual](https://github.com/bobthecow/psysh/wiki/PHP-manual)
+ * [🤓 Windows](https://github.com/bobthecow/psysh/wiki/Windows)
+
+### [🖥 Usage](https://github.com/bobthecow/psysh/wiki/Usage)
+ * [✨ Magic variables](https://github.com/bobthecow/psysh/wiki/Magic-variables)
+ * [⏳ Managing history](https://github.com/bobthecow/psysh/wiki/History)
+ * [💲 System shell integration](https://github.com/bobthecow/psysh/wiki/Shell-integration)
+ * [🎥 Tutorials & guides](https://github.com/bobthecow/psysh/wiki/Tutorials)
+ * [🐛 Troubleshooting](https://github.com/bobthecow/psysh/wiki/Troubleshooting)
+
+### [📢 Commands](https://github.com/bobthecow/psysh/wiki/Commands)
+
+### [🛠 Configuration](https://github.com/bobthecow/psysh/wiki/Configuration)
+ * [🎛 Config options](https://github.com/bobthecow/psysh/wiki/Config-options)
+ * [🎨 Themes](https://github.com/bobthecow/psysh/wiki/Themes)
+ * [📄 Sample config file](https://github.com/bobthecow/psysh/wiki/Sample-config)
+
+### [🔌 Integrations](https://github.com/bobthecow/psysh/wiki/Integrations)
