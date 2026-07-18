@@ -12,13 +12,17 @@
 
 declare(strict_types=1);
 
-namespace Ramsey\Uuid\Exception;
+namespace Ramsey\Uuid\Rfc4122;
 
-use InvalidArgumentException as PhpInvalidArgumentException;
+use Ramsey\Uuid\Uuid;
 
 /**
- * Thrown to indicate that the argument received is not valid
+ * The max UUID is a special form of UUID that has all 128 bits set to one (`1`)
+ *
+ * @link https://www.rfc-editor.org/rfc/rfc9562#section-5.10 RFC 9562, 5.10. Max UUID
+ *
+ * @immutable
  */
-class InvalidArgumentException extends PhpInvalidArgumentException implements UuidExceptionInterface
+final class MaxUuid extends Uuid implements UuidInterface
 {
 }

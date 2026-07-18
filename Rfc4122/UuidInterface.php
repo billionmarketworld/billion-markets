@@ -12,13 +12,17 @@
 
 declare(strict_types=1);
 
-namespace Ramsey\Uuid\Exception;
+namespace Ramsey\Uuid\Rfc4122;
 
-use InvalidArgumentException as PhpInvalidArgumentException;
+use Ramsey\Uuid\UuidInterface as BaseUuidInterface;
 
 /**
- * Thrown to indicate that the argument received is not valid
+ * A universally unique identifier (UUID), as defined in RFC 9562 (formerly RFC 4122)
+ *
+ * @link https://www.rfc-editor.org/rfc/rfc9562 RFC 9562
+ *
+ * @immutable
  */
-class InvalidArgumentException extends PhpInvalidArgumentException implements UuidExceptionInterface
+interface UuidInterface extends BaseUuidInterface
 {
 }

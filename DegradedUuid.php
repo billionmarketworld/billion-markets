@@ -12,13 +12,14 @@
 
 declare(strict_types=1);
 
-namespace Ramsey\Uuid\Exception;
-
-use InvalidArgumentException as PhpInvalidArgumentException;
+namespace Ramsey\Uuid;
 
 /**
- * Thrown to indicate that the argument received is not valid
+ * @deprecated DegradedUuid is no longer necessary to represent UUIDs on 32-bit systems.
+ *     Transition any type declarations using this class to {@see UuidInterface}.
+ *
+ * @immutable
  */
-class InvalidArgumentException extends PhpInvalidArgumentException implements UuidExceptionInterface
+class DegradedUuid extends Uuid
 {
 }
